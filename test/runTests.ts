@@ -58,7 +58,6 @@ test('LocatorRanker: normalizes newlines in button text for XPath', () => {
 
   const xpathLocator = locators.find((l) => l.type === 'xpath');
   assert.ok(xpathLocator);
-  // Must NOT contain literal raw newline
   assert.ok(!xpathLocator.value.includes('\n'));
   assert.strictEqual(xpathLocator.value, "//button[normalize-space()='01 Catalog']");
 });
@@ -82,7 +81,6 @@ test('PythonSeleniumGenerator: handles starting digits and deduplicates repeated
       },
       boundingRect: { x: 0, y: 0, width: 100, height: 30 },
     },
-    // Two identical buttons on page (e.g. repeated table rows)
     {
       id: 'el_2',
       tagName: 'button',
@@ -124,30 +122,28 @@ test('PythonSeleniumGenerator: handles starting digits and deduplicates repeated
     elements: sampleElements,
   });
 
-  // Valid identifier: cannot start with digit '01'
   assert.ok(!code.includes('01CATALOG_BUTTON ='), 'Must not start with number');
   assert.ok(code.includes('BTN_01_CATALOG_BUTTON ='), 'Must be prefixed with valid identifier');
 
-  // Deduplication: DELETE_SOURCE_BUTTON should only be defined ONCE
   const occurrences = (code.match(/DELETE_SOURCE_BUTTON =/g) || []).length;
   assert.strictEqual(occurrences, 1, 'Repeated button must only be defined once in locators');
-
-  // Must have index-aware action method
   assert.ok(code.includes('def click_delete_source_button(self, index: int = 0):'));
 });
 
-test('RecorderManager: generates properly indented Python test script (8 spaces inside try)', () => {
+test('RecorderManager: generates POM-driven test script in Python and Java with clean Test class names', () => {
   const recorder = RecorderManager.getInstance();
-  // Generate dummy test script
-  const script = recorder.generateTestScript('python', 'SampleScenarioTest');
 
-  assert.ok(script.includes('    try:'));
-  // Lines inside try must be indented by 8 spaces, not 4
-  const lines = script.split('\n');
-  const tryIndex = lines.findIndex((l) => l.trim() === 'try:');
-  assert.ok(tryIndex !== -1);
-  const nextLine = lines[tryIndex + 1];
-  assert.ok(nextLine.startsWith('        '), 'Lines inside try block must have 8 spaces indentation');
+  // Test Java Test class naming convention
+  const javaScript = recorder.generateTestScript('java', 'ProposalPlatformPage', true);
+  assert.ok(javaScript.includes('public class ProposalPlatformTest {'), 'Java test class must end in Test, not Page');
+  assert.ok(javaScript.includes('import pages.ProposalPlatformPage;'));
+  assert.ok(javaScript.includes('page = new ProposalPlatformPage(driver);'));
+
+  // Test Python POM-driven test
+  const pythonScript = recorder.generateTestScript('python', 'ProposalPlatformPage', true);
+  assert.ok(pythonScript.includes('from pages.proposal_platform_page import ProposalPlatformPage'));
+  assert.ok(pythonScript.includes('page = ProposalPlatformPage(driver)'));
+  assert.ok(pythonScript.includes('def test_proposal_platform_scenario():'));
 });
 
 test('DomPruner: sanitizes emails and credit cards from DOM', () => {

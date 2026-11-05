@@ -59,6 +59,8 @@ export interface RecordedAction {
   locator?: LocatorCandidate;
   value?: string;
   targetElementDescription?: string;
+  suggestedVariableName?: string;
+  category?: ElementCategory;
   url?: string;
   waitCondition?: {
     type: 'network_idle' | 'element_visible' | 'element_clickable';

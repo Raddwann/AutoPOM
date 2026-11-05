@@ -75,7 +75,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             break;
 
           case 'generateTestScript':
-            await this.handleGenerateTestScript(data.className, data.language);
+            await this.handleGenerateTestScript(data.className, data.language, data.usePom !== false);
             break;
         }
       } catch (err: any) {
@@ -138,11 +138,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const result = await DomExtractor.scanPage(page);
       this.lastScanResult = result;
 
-      // Suggest clean class name from page title or URL
-      let suggestedClassName = 'Page';
-      if (result.title) {
-        suggestedClassName = result.title.replace(/[^a-zA-Z0-9]/g, '') + 'Page';
-      }
+      // Suggest clean, concise class name from page title or URL
+      const suggestedClassName = this.suggestCleanPageClassName(result.title);
 
       this.view?.webview.postMessage({
         type: 'scanCompleted',
@@ -261,14 +258,47 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleGenerateTestScript(className: string, language: 'python' | 'java'): Promise<void> {
-    const code = RecorderManager.getInstance().generateTestScript(language, className);
+  private async handleGenerateTestScript(
+    className: string,
+    language: 'python' | 'java',
+    usePom: boolean = true
+  ): Promise<void> {
+    const code = RecorderManager.getInstance().generateTestScript(language, className, usePom);
     const doc = await vscode.workspace.openTextDocument({
       content: code,
       language: language === 'python' ? 'python' : 'java',
     });
     await vscode.window.showTextDocument(doc);
     vscode.window.showInformationMessage('AutoPOM: Generated recorded test script!');
+  }
+
+  private suggestCleanPageClassName(rawTitle: string): string {
+    if (!rawTitle) return 'LoginPage';
+
+    // Remove file extensions, URLs, or trailing branding (e.g. "Proposal Platform | Acme Corp")
+    const clean = rawTitle
+      .replace(/https?:\/\/[^\s]+/g, '')
+      .replace(/[|–—\-_].*$/, '')
+      .replace(/[^a-zA-Z0-9\s]/g, ' ')
+      .trim();
+
+    const stopWords = new Set([
+      'and', 'or', 'the', 'a', 'an', 'of', 'to', 'in', 'for', 'with', 'on', 'at', 'by', 'from'
+    ]);
+    const words = clean
+      .split(/\s+/)
+      .filter((w) => w && !stopWords.has(w.toLowerCase()));
+
+    if (words.length === 0) return 'CustomPage';
+
+    // If title has many words, pick the last 2-3 significant words for clean conciseness
+    const selectedWords = words.length > 3 ? words.slice(-3) : words;
+
+    const pascal = selectedWords
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join('');
+
+    return pascal.endsWith('Page') ? pascal : `${pascal}Page`;
   }
 
   private getHtmlForWebview(webview: vscode.Webview): string {

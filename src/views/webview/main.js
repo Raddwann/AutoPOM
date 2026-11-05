@@ -17,6 +17,7 @@
   const recordingBanner = document.getElementById('recordingBanner');
   const recordingText = document.getElementById('recordingText');
   const selectLanguage = document.getElementById('selectLanguage');
+  const selectTestStyle = document.getElementById('selectTestStyle');
   const inputClassName = document.getElementById('inputClassName');
 
   // Recorded Section
@@ -110,6 +111,7 @@
       type: 'generateTestScript',
       className: inputClassName.value || 'RecordedScenarioTest',
       language: selectLanguage.value,
+      usePom: selectTestStyle ? selectTestStyle.value === 'pom' : true,
     });
   });
 
