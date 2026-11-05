@@ -86,10 +86,12 @@ export class BrowserManager {
         browserURL: `http://127.0.0.1:${this.cdpPort}`,
         defaultViewport: null,
       });
-      const pages = await this.browser.pages();
-      this.activePage = pages[0] || (await this.browser.newPage());
+      const page = await this.getActivePage();
+      if (initialUrl && initialUrl !== 'about:blank') {
+        await page.goto(this.ensureProtocol(initialUrl), { waitUntil: 'domcontentloaded' }).catch(() => {});
+      }
       this.setupBrowserEvents();
-      return this.activePage;
+      return page;
     } catch {
       // Not yet running, proceed to launch
     }
@@ -97,11 +99,11 @@ export class BrowserManager {
     const chromePath = this.findChromeExecutable();
     if (!chromePath) {
       throw new Error(
-        'Chrome/Edge executable not found automatically. Please configure "autopom.chromePath" in Settings.'
+        'Chrome or Edge executable not found. Please set "autopom.chromePath" in Settings to your chrome.exe path.'
       );
     }
 
-    // Isolated temporary user data dir so it won't conflict with any running Chrome instance
+    // Isolated temporary user data dir so it won't conflict with existing sessions
     const userDataDir = path.join(os.tmpdir(), 'autopom_chrome_profile');
     if (!fs.existsSync(userDataDir)) {
       fs.mkdirSync(userDataDir, { recursive: true });
@@ -112,7 +114,7 @@ export class BrowserManager {
       `--user-data-dir=${userDataDir}`,
       '--no-first-run',
       '--no-default-browser-check',
-      initialUrl,
+      this.ensureProtocol(initialUrl),
     ];
 
     this.chromeProcess = spawn(chromePath, args, {
@@ -121,7 +123,7 @@ export class BrowserManager {
     });
     this.chromeProcess.unref();
 
-    // Wait a moment for Chrome to open port and connect
+    // Wait for Chrome to open debugging port and connect
     let retries = 15;
     while (retries > 0) {
       await new Promise((r) => setTimeout(r, 600));
@@ -140,10 +142,19 @@ export class BrowserManager {
       throw new Error(`Failed to connect to Chrome on port ${this.cdpPort} after launching.`);
     }
 
-    const pages = await this.browser.pages();
-    this.activePage = pages[0] || (await this.browser.newPage());
+    const page = await this.getActivePage();
     this.setupBrowserEvents();
-    return this.activePage;
+    return page;
+  }
+
+  /**
+   * Navigates the active page to a user-specified URL.
+   */
+  public async navigateTo(url: string): Promise<Page> {
+    const page = await this.getActivePage();
+    const fullUrl = this.ensureProtocol(url);
+    await page.goto(fullUrl, { waitUntil: 'domcontentloaded' });
+    return page;
   }
 
   public async getActivePage(): Promise<Page> {
@@ -152,10 +163,17 @@ export class BrowserManager {
     }
     if (this.browser && this.browser.connected) {
       const pages = await this.browser.pages();
-      this.activePage = pages[0] || (await this.browser.newPage());
+      // Return the most recent non-closed page
+      for (let i = pages.length - 1; i >= 0; i--) {
+        if (!pages[i].isClosed()) {
+          this.activePage = pages[i];
+          return this.activePage;
+        }
+      }
+      this.activePage = await this.browser.newPage();
       return this.activePage;
     }
-    throw new Error('No active browser connected. Please launch or connect to a browser first.');
+    throw new Error('No active browser connected. Please click "Launch & Connect Chrome" first.');
   }
 
   public async closeBrowser(): Promise<void> {
@@ -178,6 +196,15 @@ export class BrowserManager {
     }
   }
 
+  private ensureProtocol(url: string): string {
+    const trimmed = (url || '').trim();
+    if (!trimmed) return 'https://the-internet.herokuapp.com/login';
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      return 'https://' + trimmed;
+    }
+    return trimmed;
+  }
+
   private setupBrowserEvents(): void {
     if (!this.browser) return;
 
@@ -190,4 +217,3 @@ export class BrowserManager {
     vscode.commands.executeCommand('setContext', 'autopom.browserConnected', true);
   }
 }
-

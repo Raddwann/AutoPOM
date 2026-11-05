@@ -5,9 +5,12 @@
   let isConnected = false;
   let isRecording = false;
   let scannedElements = [];
+  let recordedActions = [];
 
   // DOM Elements
   const connectionBadge = document.getElementById('connectionBadge');
+  const inputUrl = document.getElementById('inputUrl');
+  const btnNavigate = document.getElementById('btnNavigate');
   const btnLaunch = document.getElementById('btnLaunch');
   const btnScan = document.getElementById('btnScan');
   const btnRecord = document.getElementById('btnRecord');
@@ -15,20 +18,55 @@
   const recordingText = document.getElementById('recordingText');
   const selectLanguage = document.getElementById('selectLanguage');
   const inputClassName = document.getElementById('inputClassName');
+
+  // Recorded Section
+  const recordedSection = document.getElementById('recordedSection');
+  const actionCountBadge = document.getElementById('actionCountBadge');
+  const recordedList = document.getElementById('recordedList');
+  const btnGenerateTest = document.getElementById('btnGenerateTest');
+
+  // Scanned Section
   const elementCountBadge = document.getElementById('elementCountBadge');
   const elementsEmptyState = document.getElementById('elementsEmptyState');
   const elementsContainer = document.getElementById('elementsContainer');
-  const actionsFooter = document.getElementById('actionsFooter');
+  const scannerActions = document.getElementById('scannerActions');
   const btnAiRefactor = document.getElementById('btnAiRefactor');
   const btnGeneratePOM = document.getElementById('btnGeneratePOM');
-  const btnGenerateTest = document.getElementById('btnGenerateTest');
 
   // Event Listeners
   btnLaunch.addEventListener('click', () => {
     btnLaunch.disabled = true;
     btnLaunch.textContent = 'Connecting...';
-    vscode.postMessage({ type: 'launchBrowser' });
+    vscode.postMessage({
+      type: 'launchBrowser',
+      url: inputUrl.value.trim(),
+    });
   });
+
+  btnNavigate.addEventListener('click', () => {
+    navigateCurrentUrl();
+  });
+
+  inputUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      if (isConnected) {
+        navigateCurrentUrl();
+      } else {
+        btnLaunch.click();
+      }
+    }
+  });
+
+  function navigateCurrentUrl() {
+    const url = inputUrl.value.trim();
+    if (!url) return;
+    btnNavigate.disabled = true;
+    btnNavigate.textContent = '...';
+    vscode.postMessage({
+      type: 'navigateTo',
+      url,
+    });
+  }
 
   btnScan.addEventListener('click', () => {
     btnScan.disabled = true;
@@ -38,8 +76,12 @@
 
   btnRecord.addEventListener('click', () => {
     if (!isRecording) {
+      recordedActions = [];
+      renderRecordedList();
       vscode.postMessage({ type: 'startRecording' });
     } else {
+      btnRecord.disabled = true;
+      btnRecord.textContent = 'Stopping...';
       vscode.postMessage({ type: 'stopRecording' });
     }
   });
@@ -81,6 +123,14 @@
         updateConnectionUI();
         break;
 
+      case 'urlUpdated':
+        if (message.url) {
+          inputUrl.value = message.url;
+        }
+        btnNavigate.disabled = false;
+        btnNavigate.textContent = 'Go';
+        break;
+
       case 'scanCompleted':
         btnScan.disabled = false;
         btnScan.innerHTML = '<span class="icon">🔍</span> Scan Page';
@@ -88,12 +138,28 @@
         if (message.suggestedClassName) {
           inputClassName.value = message.suggestedClassName;
         }
+        if (message.url) {
+          inputUrl.value = message.url;
+        }
         renderElementsList();
+        break;
+
+      case 'actionCaptured':
+        if (message.action) {
+          recordedActions.push(message.action);
+        }
+        updateRecordingCounter(message.totalCount || recordedActions.length);
+        renderRecordedList();
         break;
 
       case 'recordingStatus':
         isRecording = message.isRecording;
-        updateRecordingUI(message.actionCount || 0);
+        btnRecord.disabled = false;
+        if (message.actions) {
+          recordedActions = message.actions;
+        }
+        updateRecordingUI(message.actionCount || recordedActions.length);
+        renderRecordedList();
         break;
 
       case 'aiRefactorCompleted':
@@ -113,6 +179,9 @@
         btnLaunch.innerHTML = '<span class="icon">🚀</span> Launch & Connect Chrome';
         btnScan.disabled = false;
         btnScan.innerHTML = '<span class="icon">🔍</span> Scan Page';
+        btnRecord.disabled = false;
+        btnNavigate.disabled = false;
+        btnNavigate.textContent = 'Go';
         btnAiRefactor.disabled = false;
         btnAiRefactor.innerHTML = '<span class="icon">✨</span> Refine with AI (Names & Groups)';
         break;
@@ -121,10 +190,11 @@
 
   function updateConnectionUI() {
     if (isConnected) {
-      connectionBadge.textContent = 'Connected (CDP)';
+      connectionBadge.textContent = 'Connected';
       connectionBadge.className = 'badge connected';
       btnLaunch.innerHTML = '<span class="icon">🔄</span> Reconnect Chrome';
       btnLaunch.disabled = false;
+      btnNavigate.disabled = false;
       btnScan.disabled = false;
       btnRecord.disabled = false;
     } else {
@@ -132,9 +202,15 @@
       connectionBadge.className = 'badge disconnected';
       btnLaunch.innerHTML = '<span class="icon">🚀</span> Launch & Connect Chrome';
       btnLaunch.disabled = false;
+      btnNavigate.disabled = true;
       btnScan.disabled = true;
       btnRecord.disabled = true;
     }
+  }
+
+  function updateRecordingCounter(count) {
+    recordingText.textContent = `Recording... (${count} actions captured)`;
+    actionCountBadge.textContent = `${count} captured`;
   }
 
   function updateRecordingUI(count) {
@@ -142,16 +218,67 @@
       btnRecord.className = 'btn recording';
       btnRecord.innerHTML = '<span class="icon">⏹</span> Stop Recording';
       recordingBanner.classList.remove('hidden');
-      recordingText.textContent = `Recording actions... (${count} captured)`;
-      btnGenerateTest.classList.remove('hidden');
+      updateRecordingCounter(count);
     } else {
       btnRecord.className = 'btn secondary';
-      btnRecord.innerHTML = '<span class="icon">⏺</span> Record';
+      btnRecord.innerHTML = '<span class="icon">⏺</span> Record Steps';
       recordingBanner.classList.add('hidden');
-      if (count > 0) {
-        btnGenerateTest.classList.remove('hidden');
-      }
     }
+  }
+
+  function renderRecordedList() {
+    actionCountBadge.textContent = `${recordedActions.length} captured`;
+
+    if (recordedActions.length === 0) {
+      recordedSection.classList.add('hidden');
+      return;
+    }
+
+    recordedSection.classList.remove('hidden');
+    recordedList.innerHTML = '';
+
+    recordedActions.forEach((act, idx) => {
+      const item = document.createElement('div');
+      item.className = 'action-item';
+
+      const badge = document.createElement('span');
+      badge.className = `action-badge ${act.type}`;
+      badge.textContent = act.type.toUpperCase().slice(0, 4);
+
+      const details = document.createElement('div');
+      details.className = 'action-details';
+
+      const title = document.createElement('div');
+      title.className = 'action-title';
+
+      if (act.type === 'navigation') {
+        title.textContent = `${idx + 1}. Navigate: ${act.url || ''}`;
+      } else if (act.type === 'click') {
+        title.textContent = `${idx + 1}. Click: ${act.targetElementDescription || 'element'}`;
+      } else if (act.type === 'input') {
+        title.textContent = `${idx + 1}. Input: "${act.value || ''}" into ${act.targetElementDescription || 'element'}`;
+      }
+
+      details.appendChild(title);
+
+      if (act.locator) {
+        const sub = document.createElement('div');
+        sub.className = 'action-subtitle';
+        sub.textContent = `${act.locator.type}: ${act.locator.value}`;
+        details.appendChild(sub);
+      }
+
+      if (act.waitCondition) {
+        const wait = document.createElement('div');
+        wait.className = 'wait-tag';
+        wait.textContent = `⏱ Smart Wait: ${act.waitCondition.description}`;
+        details.appendChild(wait);
+      }
+
+      item.appendChild(badge);
+      item.appendChild(details);
+      recordedList.appendChild(item);
+    });
   }
 
   function renderElementsList() {
@@ -160,13 +287,13 @@
     if (scannedElements.length === 0) {
       elementsEmptyState.classList.remove('hidden');
       elementsContainer.classList.add('hidden');
-      actionsFooter.classList.add('hidden');
+      scannerActions.classList.add('hidden');
       return;
     }
 
     elementsEmptyState.classList.add('hidden');
     elementsContainer.classList.remove('hidden');
-    actionsFooter.classList.remove('hidden');
+    scannerActions.classList.remove('hidden');
 
     elementsContainer.innerHTML = '';
 
@@ -214,4 +341,3 @@
   // Initial check
   vscode.postMessage({ type: 'checkStatus' });
 })();
-

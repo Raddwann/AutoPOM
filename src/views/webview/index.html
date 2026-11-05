@@ -17,70 +17,88 @@
       <p class="subtitle">Selenium Page Object Model & Test Copilot</p>
     </header>
 
-    <!-- Top Action Controls -->
-    <div class="section-card">
+    <!-- Browser URL Navigator -->
+    <div class="section-card url-card">
+      <label for="inputUrl" class="field-label">Target Website / App URL:</label>
+      <div class="url-input-row">
+        <input type="text" id="inputUrl" placeholder="https://..." value="https://the-internet.herokuapp.com/login">
+        <button id="btnNavigate" class="btn secondary" title="Navigate browser to this URL" disabled>Go</button>
+      </div>
       <button id="btnLaunch" class="btn primary full-width">
         <span class="icon">🚀</span> Launch & Connect Chrome
       </button>
+    </div>
 
+    <!-- Mode Selector / Control Bar -->
+    <div class="section-card controls-card">
       <div class="btn-group">
         <button id="btnScan" class="btn secondary" disabled>
           <span class="icon">🔍</span> Scan Page
         </button>
         <button id="btnRecord" class="btn secondary" disabled>
-          <span class="icon">⏺</span> Record
+          <span class="icon">⏺</span> Record Steps
         </button>
       </div>
 
       <div id="recordingBanner" class="recording-banner hidden">
         <span class="pulse-dot"></span>
-        <span id="recordingText">Recording in progress... (0 actions)</span>
+        <span id="recordingText">Recording active... Perform clicks & typing in Chrome</span>
       </div>
     </div>
 
-    <!-- Configuration Strip -->
+    <!-- Generator Config -->
     <div class="section-card config-card">
       <div class="config-row">
-        <label for="selectLanguage">Target Language:</label>
+        <label for="selectLanguage">Language:</label>
         <select id="selectLanguage">
           <option value="python" selected>Python (Selenium)</option>
           <option value="java">Java (Selenium)</option>
         </select>
       </div>
       <div class="config-row">
-        <label for="inputClassName">Page Class Name:</label>
+        <label for="inputClassName">Class Name:</label>
         <input type="text" id="inputClassName" placeholder="e.g. LoginPage" value="LoginPage">
       </div>
     </div>
 
-    <!-- Scanned Elements Section -->
-    <div class="section-header">
-      <span class="section-title">Interactive Elements</span>
-      <span id="elementCountBadge" class="count-badge">0 found</span>
-    </div>
-
-    <div id="elementsEmptyState" class="empty-state">
-      <p>No elements scanned yet.</p>
-      <p class="hint">Click <strong>Launch & Connect Chrome</strong>, then navigate to your target page and click <strong>Scan Page</strong>.</p>
-    </div>
-
-    <div id="elementsContainer" class="elements-list hidden"></div>
-
-    <!-- Generation Actions -->
-    <div id="actionsFooter" class="actions-footer hidden">
-      <button id="btnAiRefactor" class="btn secondary full-width">
-        <span class="icon">✨</span> Refine with AI (Names & Groups)
-      </button>
-      <button id="btnGeneratePOM" class="btn primary full-width">
-        <span class="icon">📄</span> Export Page Object Model
-      </button>
-      <button id="btnGenerateTest" class="btn outline full-width hidden">
+    <!-- Recorded Actions Section (Shown when actions are captured) -->
+    <div id="recordedSection" class="section-container hidden">
+      <div class="section-header">
+        <span class="section-title">Recorded Actions</span>
+        <span id="actionCountBadge" class="count-badge">0 captured</span>
+      </div>
+      <div id="recordedList" class="actions-list"></div>
+      <button id="btnGenerateTest" class="btn primary full-width" style="margin-top: 8px;">
         <span class="icon">🧪</span> Export Recorded Test Script
       </button>
+    </div>
+
+    <!-- Scanned Elements Section -->
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-title">Interactive Elements</span>
+        <span id="elementCountBadge" class="count-badge">0 found</span>
+      </div>
+
+      <div id="elementsEmptyState" class="empty-state">
+        <p>No elements scanned yet.</p>
+        <p class="hint">Click <strong>Launch Chrome</strong>, enter any website, then click <strong>Scan Page</strong>.</p>
+      </div>
+
+      <div id="elementsContainer" class="elements-list hidden"></div>
+
+      <!-- Scanned Elements Actions -->
+      <div id="scannerActions" class="actions-footer hidden">
+        <button id="btnAiRefactor" class="btn secondary full-width">
+          <span class="icon">✨</span> Refine with AI (Names & Groups)
+        </button>
+        <button id="btnGeneratePOM" class="btn primary full-width">
+          <span class="icon">📄</span> Export Page Object Model
+        </button>
+      </div>
     </div>
   </div>
 
   <script src="{{scriptUri}}"></script>
 </body>
 </html>
-

@@ -2,6 +2,8 @@ import { Page, CDPSession } from 'puppeteer-core';
 import { RecordedAction, LocatorCandidate } from '../types';
 import { LocatorRanker, RawElementInfo } from '../scanner/locatorRanker';
 
+export type OnActionCallback = (action: RecordedAction, totalCount: number) => void;
+
 export class RecorderManager {
   private static instance: RecorderManager;
   private isRecording: boolean = false;
@@ -9,6 +11,7 @@ export class RecorderManager {
   private cdpSession: CDPSession | null = null;
   private pendingRequests: Map<string, { url: string; startTime: number }> = new Map();
   private lastNetworkActivityTime: number = 0;
+  private onActionCallback: OnActionCallback | null = null;
 
   private constructor() {}
 
@@ -27,6 +30,10 @@ export class RecorderManager {
     return [...this.actions];
   }
 
+  public setOnActionCallback(cb: OnActionCallback | null): void {
+    this.onActionCallback = cb;
+  }
+
   public async startRecording(page: Page): Promise<void> {
     this.isRecording = true;
     this.actions = [];
@@ -38,7 +45,6 @@ export class RecorderManager {
     await this.cdpSession.send('Network.enable');
 
     this.cdpSession.on('Network.requestWillBeSent', (params) => {
-      // Ignore static assets (images, fonts, stylesheets)
       const resourceType = params.type;
       if (resourceType && ['XHR', 'Fetch', 'Document'].includes(resourceType)) {
         this.pendingRequests.set(params.requestId, {
@@ -62,11 +68,11 @@ export class RecorderManager {
     await page.exposeFunction('__AUTOPOM_ON_USER_ACTION', (rawAction: any) => {
       this.handleUserAction(rawAction);
     }).catch(() => {
-      // Binding might already be registered
+      // Binding may already exist on page
     });
 
-    // 3. Inject event listener script
-    await page.evaluate(() => {
+    // 3. Script to attach to page and persist across navigations
+    const listenerScript = () => {
       function getElementAttributes(el: HTMLElement) {
         return {
           tagName: el.tagName.toLowerCase(),
@@ -96,11 +102,13 @@ export class RecorderManager {
           const closestInteractive = target.closest('button, a, input, select, [role="button"]') || target;
           const info = getElementAttributes(closestInteractive as HTMLElement);
 
-          (window as any).__AUTOPOM_ON_USER_ACTION({
-            type: 'click',
-            elementInfo: info,
-            timestamp: Date.now(),
-          });
+          if ((window as any).__AUTOPOM_ON_USER_ACTION) {
+            (window as any).__AUTOPOM_ON_USER_ACTION({
+              type: 'click',
+              elementInfo: info,
+              timestamp: Date.now(),
+            });
+          }
         },
         true
       );
@@ -112,25 +120,33 @@ export class RecorderManager {
           if (!target || target.closest('#autopom-overlay-root')) return;
 
           const info = getElementAttributes(target);
-          (window as any).__AUTOPOM_ON_USER_ACTION({
-            type: 'input',
-            value: target.value,
-            elementInfo: info,
-            timestamp: Date.now(),
-          });
+          if ((window as any).__AUTOPOM_ON_USER_ACTION) {
+            (window as any).__AUTOPOM_ON_USER_ACTION({
+              type: 'input',
+              value: target.value,
+              elementInfo: info,
+              timestamp: Date.now(),
+            });
+          }
         },
         true
       );
-    });
+    };
+
+    // Inject for future navigations and current document
+    await page.evaluateOnNewDocument(listenerScript).catch(() => {});
+    await page.evaluate(listenerScript).catch(() => {});
 
     // Record initial navigation
-    this.actions.push({
+    const navAction: RecordedAction = {
       id: `act_${Date.now()}`,
       type: 'navigation',
       timestamp: Date.now(),
       url: page.url(),
       targetElementDescription: `Navigate to ${page.url()}`,
-    });
+    };
+    this.actions.push(navAction);
+    this.onActionCallback?.(navAction, this.actions.length);
   }
 
   public async stopRecording(): Promise<RecordedAction[]> {
@@ -159,9 +175,8 @@ export class RecorderManager {
     const category = LocatorRanker.categorize(raw.elementInfo.tagName, raw.elementInfo.type, raw.elementInfo.role);
     const varName = LocatorRanker.suggestVariableName(raw.elementInfo, category);
 
-    // Detect if this action should have a smart wait attached
-    // If pending XHR/Fetch requests are active, or if network activity occurred within the last 500ms
-    const hasPendingNetwork = this.pendingRequests.size > 0 || (Date.now() - this.lastNetworkActivityTime < 500);
+    const hasPendingNetwork =
+      this.pendingRequests.size > 0 || Date.now() - this.lastNetworkActivityTime < 500;
 
     const action: RecordedAction = {
       id: `act_${raw.timestamp}`,
@@ -169,16 +184,17 @@ export class RecorderManager {
       timestamp: raw.timestamp,
       locator: recommendedLocator,
       value: raw.value,
-      targetElementDescription: `${raw.type.toUpperCase()}: ${varName}`,
+      targetElementDescription: `${raw.type === 'click' ? 'Click' : 'Input'}: ${varName}`,
       waitCondition: hasPendingNetwork
         ? {
             type: 'network_idle',
-            description: 'Wait for pending network requests to finish',
+            description: 'Wait for network requests to finish',
           }
         : undefined,
     };
 
     this.actions.push(action);
+    this.onActionCallback?.(action, this.actions.length);
   }
 
   /**
@@ -196,7 +212,7 @@ export class RecorderManager {
 
     this.actions.forEach((act) => {
       if (act.type === 'navigation' && act.url) {
-        steps.push(`    # Navigate to target page`);
+        steps.push(`    # 1. Navigate to target URL`);
         steps.push(`    driver.get("${act.url}")`);
         steps.push('');
       } else if (act.type === 'click' && act.locator) {
@@ -206,7 +222,7 @@ export class RecorderManager {
         );
         steps.push(`    element.click()`);
         if (act.waitCondition?.type === 'network_idle') {
-          steps.push(`    # Smart Wait: wait until DOM stabilizes after click`);
+          steps.push(`    # Smart Wait: wait for network/DOM to stabilize`);
           steps.push(`    wait.until(lambda d: d.execute_script("return document.readyState") == "complete")`);
         }
         steps.push('');
@@ -222,6 +238,9 @@ export class RecorderManager {
     });
 
     return [
+      '"""',
+      'Generated Selenium Python Test Script by AutoPOM',
+      '"""',
       'import pytest',
       'from selenium import webdriver',
       'from selenium.webdriver.common.by import By',
@@ -240,21 +259,12 @@ export class RecorderManager {
     ].join('\n');
   }
 
-  private toSnakeCase(str: string): string {
-    return str
-      .replace(/([A-Z])/g, '_$1')
-      .replace(/[^a-zA-Z0-9_]/g, '_')
-      .replace(/_{2,}/g, '_')
-      .replace(/^_/, '')
-      .toLowerCase() || 'recorded';
-  }
-
   private generateJavaTestScript(className: string = 'RecordedScenarioTest'): string {
     const steps: string[] = [];
 
     this.actions.forEach((act) => {
       if (act.type === 'navigation' && act.url) {
-        steps.push(`        // Navigate`);
+        steps.push(`        // 1. Navigate to target URL`);
         steps.push(`        driver.get("${act.url}");`);
         steps.push('');
       } else if (act.type === 'click' && act.locator) {
@@ -265,7 +275,9 @@ export class RecorderManager {
         steps.push('');
       } else if (act.type === 'input' && act.locator) {
         steps.push(`        // ${act.targetElementDescription || 'Input text'}`);
-        steps.push(`        WebElement inputEl = wait.until(ExpectedConditions.visibilityOfElementLocated(${this.getJavaBy(act.locator)}));`);
+        steps.push(
+          `        WebElement inputEl = wait.until(ExpectedConditions.visibilityOfElementLocated(${this.getJavaBy(act.locator)}));`
+        );
         steps.push(`        inputEl.clear();`);
         steps.push(`        inputEl.sendKeys("${(act.value || '').replace(/"/g, '\\"')}");`);
         steps.push('');
@@ -286,6 +298,9 @@ export class RecorderManager {
       'import org.openqa.selenium.support.ui.WebDriverWait;',
       'import java.time.Duration;',
       '',
+      '/**',
+      ` * Auto-generated Selenium Test Scenario by AutoPOM`,
+      ' */',
       `public class ${className} {`,
       '    private WebDriver driver;',
       '    private WebDriverWait wait;',
@@ -310,6 +325,17 @@ export class RecorderManager {
       '}',
       '',
     ].join('\n');
+  }
+
+  private toSnakeCase(str: string): string {
+    return (
+      str
+        .replace(/([A-Z])/g, '_$1')
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .replace(/^_/, '')
+        .toLowerCase() || 'recorded'
+    );
   }
 
   private getPythonBy(locator: LocatorCandidate): string {

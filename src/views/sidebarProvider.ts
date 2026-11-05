@@ -14,7 +14,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private lastScanResult?: PageScanResult;
 
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(private readonly extensionUri: vscode.Uri) {
+    // Setup real-time action listener for recorder
+    RecorderManager.getInstance().setOnActionCallback((action, totalCount) => {
+      this.view?.webview.postMessage({
+        type: 'actionCaptured',
+        action,
+        totalCount,
+      });
+    });
+  }
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -38,7 +47,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             break;
 
           case 'launchBrowser':
-            await this.handleLaunchBrowser();
+            await this.handleLaunchBrowser(data.url);
+            break;
+
+          case 'navigateTo':
+            await this.handleNavigate(data.url);
             break;
 
           case 'scanPage':
@@ -80,14 +93,41 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private async handleLaunchBrowser(): Promise<void> {
+  private async handleLaunchBrowser(customUrl?: string): Promise<void> {
     try {
-      vscode.window.showInformationMessage('AutoPOM: Launching Chrome with CDP enabled...');
-      await BrowserManager.getInstance().launchAndConnect();
+      const url = customUrl || 'https://the-internet.herokuapp.com/login';
+      vscode.window.showInformationMessage(`AutoPOM: Launching Chrome with CDP enabled (${url})...`);
+      const page = await BrowserManager.getInstance().launchAndConnect(url);
+      const currentUrl = page.url();
+
+      this.view?.webview.postMessage({
+        type: 'urlUpdated',
+        url: currentUrl,
+      });
+
       vscode.window.showInformationMessage('AutoPOM: Connected to Chrome successfully!');
       this.sendBrowserStatus();
     } catch (err: any) {
       vscode.window.showErrorMessage(`AutoPOM: Failed to connect to Chrome: ${err.message}`);
+      this.view?.webview.postMessage({ type: 'error', message: err.message });
+    }
+  }
+
+  private async handleNavigate(targetUrl: string): Promise<void> {
+    try {
+      if (!targetUrl || targetUrl.trim().length === 0) {
+        vscode.window.showWarningMessage('Please enter a valid URL.');
+        return;
+      }
+      vscode.window.showInformationMessage(`AutoPOM: Navigating to ${targetUrl}...`);
+      const page = await BrowserManager.getInstance().navigateTo(targetUrl);
+      this.view?.webview.postMessage({
+        type: 'urlUpdated',
+        url: page.url(),
+      });
+      vscode.window.showInformationMessage(`AutoPOM: Loaded ${page.url()}`);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`AutoPOM Navigation Error: ${err.message}`);
       this.view?.webview.postMessage({ type: 'error', message: err.message });
     }
   }
@@ -108,10 +148,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         type: 'scanCompleted',
         suggestedClassName,
         elements: result.elements,
+        url: result.url,
       });
 
       vscode.window.showInformationMessage(
-        `AutoPOM: Found ${result.elements.length} interactive elements.`
+        `AutoPOM: Found ${result.elements.length} interactive elements on "${result.title}".`
       );
     } catch (err: any) {
       vscode.window.showErrorMessage(`AutoPOM Scan error: ${err.message}`);
@@ -127,10 +168,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       this.view?.webview.postMessage({
         type: 'recordingStatus',
         isRecording: true,
-        actionCount: 0,
+        actionCount: 1,
+        actions: RecorderManager.getInstance().getRecordedActions(),
       });
 
-      vscode.window.showInformationMessage('AutoPOM: Recording started! Click & interact in Chrome.');
+      vscode.window.showInformationMessage('AutoPOM: Recording started! Perform your test clicks & inputs in Chrome.');
     } catch (err: any) {
       vscode.window.showErrorMessage(`AutoPOM Recording error: ${err.message}`);
     }
@@ -144,11 +186,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         type: 'recordingStatus',
         isRecording: false,
         actionCount: actions.length,
+        actions: actions,
       });
 
-      vscode.window.showInformationMessage(
-        `AutoPOM: Recording stopped. Captured ${actions.length} actions.`
+      const choice = await vscode.window.showInformationMessage(
+        `AutoPOM: Recording stopped. Captured ${actions.length} actions!`,
+        'Open Test Script'
       );
+
+      if (choice === 'Open Test Script') {
+        await this.handleGenerateTestScript('RecordedScenarioTest', 'python');
+      }
     } catch (err: any) {
       vscode.window.showErrorMessage(`AutoPOM Stop Recording error: ${err.message}`);
     }
@@ -188,7 +236,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const ext = generator.getFileExtension();
     const fileName = `${className}${ext}`;
 
-    // If workspace folder is open, offer to write directly to a 'pages' directory
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (workspaceFolders && workspaceFolders.length > 0) {
       const rootPath = workspaceFolders[0].uri.fsPath;
@@ -205,7 +252,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       await vscode.window.showTextDocument(doc);
       vscode.window.showInformationMessage(`AutoPOM: Generated ${fileName} in ${pagesDir}`);
     } else {
-      // Open in a new untitled document
       const doc = await vscode.workspace.openTextDocument({
         content: code,
         language: language === 'python' ? 'python' : 'java',
@@ -245,4 +291,3 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     return html;
   }
 }
-

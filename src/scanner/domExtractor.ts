@@ -1,8 +1,6 @@
 import { Page } from 'puppeteer-core';
 import { PageScanResult, ScannedElement } from '../types';
 import { LocatorRanker, RawElementInfo } from './locatorRanker';
-import { INJECTED_SCANNER_FN_STRING } from './injected/scannerScript';
-import { INJECTED_OVERLAY_FN_STRING } from './injected/overlayScript';
 
 export class DomExtractor {
   /**
@@ -10,17 +8,110 @@ export class DomExtractor {
    * generates ranked locators, and injects visual badges.
    */
   public static async scanPage(page: Page): Promise<PageScanResult> {
-    // 1. Evaluate scanner in page context
-    const rawResult = await page.evaluate((scriptStr: string) => {
-      const runner = new Function(scriptStr);
-      return runner();
-    }, INJECTED_SCANNER_FN_STRING);
+    // 1. Evaluate scanner directly in the browser page context
+    const rawResult = await page.evaluate(() => {
+      const INTERACTIVE_SELECTORS = [
+        'button',
+        'input',
+        'select',
+        'textarea',
+        'a[href]',
+        '[role="button"]',
+        '[role="link"]',
+        '[role="checkbox"]',
+        '[role="radio"]',
+        '[role="tab"]',
+        '[role="menuitem"]',
+        '[onclick]',
+      ].join(',');
 
-    const { url, title, elements: rawElements } = rawResult as {
-      url: string;
-      title: string;
-      elements: any[];
-    };
+      const elements = Array.from(document.querySelectorAll(INTERACTIVE_SELECTORS));
+      const results: any[] = [];
+      const idCounts = new Map<string, number>();
+
+      // Count IDs to determine uniqueness
+      document.querySelectorAll('[id]').forEach((el) => {
+        const id = el.id ? el.id.trim() : '';
+        if (id) {
+          idCounts.set(id, (idCounts.get(id) || 0) + 1);
+        }
+      });
+
+      function isVisible(el: Element): boolean {
+        if (!el || !el.getBoundingClientRect) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) {
+          return false;
+        }
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          return false;
+        }
+        return true;
+      }
+
+      function getDataTestId(el: Element): string {
+        return (
+          el.getAttribute('data-testid') ||
+          el.getAttribute('data-test') ||
+          el.getAttribute('data-qa') ||
+          el.getAttribute('data-cy') ||
+          el.getAttribute('data-component') ||
+          ''
+        );
+      }
+
+      elements.forEach((el, index) => {
+        if (!isVisible(el)) return;
+
+        // Skip blank hash/javascript links with no text
+        if (el.tagName.toLowerCase() === 'a') {
+          const href = el.getAttribute('href') || '';
+          const text = (el.textContent || '').trim();
+          if ((href === '#' || href === 'javascript:void(0)' || href === '') && !text) {
+            return;
+          }
+        }
+
+        const rect = el.getBoundingClientRect();
+        const id = el.id ? el.id.trim() : '';
+        const isIdUnique = id ? idCounts.get(id) === 1 : false;
+
+        results.push({
+          index,
+          tagName: el.tagName.toLowerCase(),
+          id,
+          isIdUnique,
+          name: el.getAttribute('name') || '',
+          type: el.getAttribute('type') || '',
+          className: typeof el.className === 'string' ? el.className.trim() : '',
+          innerText: (el.textContent || '').trim().slice(0, 100),
+          placeholder: el.getAttribute('placeholder') || '',
+          ariaLabel: el.getAttribute('aria-label') || '',
+          role: el.getAttribute('role') || '',
+          dataTestId: getDataTestId(el),
+          href: el.getAttribute('href') || '',
+          rect: {
+            x: Math.round(rect.x + window.scrollX),
+            y: Math.round(rect.y + window.scrollY),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          },
+        });
+      });
+
+      return {
+        url: window.location.href,
+        title: document.title || window.location.href,
+        elements: results,
+      };
+    });
+
+    if (!rawResult || !Array.isArray(rawResult.elements)) {
+      throw new Error('Failed to extract elements from active page.');
+    }
+
+    const { url, title, elements: rawElements } = rawResult;
 
     // 2. Process and rank each element using LocatorRanker
     const scannedElements: ScannedElement[] = rawElements.map((raw, idx) => {
@@ -62,17 +153,77 @@ export class DomExtractor {
       };
     });
 
-    // 3. Inject visual overlay into page
+    // 3. Inject visual overlay directly into page
     try {
-      await page.evaluate((overlayScript: string) => {
-        const inject = new Function(overlayScript);
-        inject();
-      }, INJECTED_OVERLAY_FN_STRING);
-
-      await page.evaluate((elementsData: any) => {
-        if ((window as any).__AUTOPOM_RENDER_OVERLAY) {
-          (window as any).__AUTOPOM_RENDER_OVERLAY(elementsData);
+      await page.evaluate((elementsData: any[]) => {
+        const CONTAINER_ID = 'autopom-overlay-root';
+        let root = document.getElementById(CONTAINER_ID);
+        if (root) {
+          root.remove();
         }
+
+        root = document.createElement('div');
+        root.id = CONTAINER_ID;
+        root.style.position = 'absolute';
+        root.style.top = '0';
+        root.style.left = '0';
+        root.style.width = '100%';
+        root.style.height = '100%';
+        root.style.pointerEvents = 'none';
+        root.style.zIndex = '2147483640';
+        document.body.appendChild(root);
+
+        elementsData.forEach((item, idx) => {
+          const rect = item.boundingRect;
+          if (!rect || rect.width === 0 || rect.height === 0) return;
+
+          const badge = document.createElement('div');
+          badge.className = 'autopom-badge';
+          badge.textContent = '#' + (idx + 1);
+
+          const isHigh = item.confidence === 'high';
+          const isMed = item.confidence === 'medium';
+          const bg = isHigh ? '#10b981' : (isMed ? '#f59e0b' : '#ef4444');
+
+          badge.style.position = 'absolute';
+          badge.style.left = rect.x + 'px';
+          badge.style.top = Math.max(0, rect.y - 18) + 'px';
+          badge.style.backgroundColor = bg;
+          badge.style.color = '#ffffff';
+          badge.style.fontSize = '11px';
+          badge.style.fontWeight = 'bold';
+          badge.style.padding = '1px 5px';
+          badge.style.borderRadius = '3px';
+          badge.style.boxShadow = '0 1px 4px rgba(0,0,0,0.3)';
+          badge.style.pointerEvents = 'auto';
+          badge.style.cursor = 'pointer';
+          badge.style.zIndex = '2147483645';
+          badge.title =
+            (item.suggestedVariableName || '') +
+            ' (' +
+            item.recommendedLocator.type +
+            ': ' +
+            item.recommendedLocator.value +
+            ')';
+
+          const outline = document.createElement('div');
+          outline.style.position = 'absolute';
+          outline.style.left = rect.x + 'px';
+          outline.style.top = rect.y + 'px';
+          outline.style.width = rect.width + 'px';
+          outline.style.height = rect.height + 'px';
+          outline.style.border = '2px solid ' + bg;
+          outline.style.borderRadius = '2px';
+          outline.style.backgroundColor = isHigh
+            ? 'rgba(16, 185, 129, 0.08)'
+            : isMed
+            ? 'rgba(245, 158, 11, 0.08)'
+            : 'rgba(239, 68, 68, 0.08)';
+          outline.style.pointerEvents = 'none';
+
+          root.appendChild(badge);
+          root.appendChild(outline);
+        });
       }, scannedElements);
     } catch (err) {
       console.warn('[AutoPOM] Could not render visual overlay on page:', err);
@@ -92,8 +243,9 @@ export class DomExtractor {
   public static async clearOverlay(page: Page): Promise<void> {
     try {
       await page.evaluate(() => {
-        if ((window as any).__AUTOPOM_REMOVE_OVERLAY) {
-          (window as any).__AUTOPOM_REMOVE_OVERLAY();
+        const root = document.getElementById('autopom-overlay-root');
+        if (root) {
+          root.remove();
         }
       });
     } catch (err) {
