@@ -212,27 +212,27 @@ export class RecorderManager {
 
     this.actions.forEach((act) => {
       if (act.type === 'navigation' && act.url) {
-        steps.push(`    # 1. Navigate to target URL`);
-        steps.push(`    driver.get("${act.url}")`);
+        steps.push(`        # 1. Navigate to target URL`);
+        steps.push(`        driver.get("${act.url}")`);
         steps.push('');
       } else if (act.type === 'click' && act.locator) {
-        steps.push(`    # ${act.targetElementDescription || 'Click element'}`);
+        steps.push(`        # ${act.targetElementDescription || 'Click element'}`);
         steps.push(
-          `    element = wait.until(EC.element_to_be_clickable((${this.getPythonBy(act.locator)})))`
+          `        element = wait.until(EC.element_to_be_clickable((${this.getPythonBy(act.locator)})))`
         );
-        steps.push(`    element.click()`);
+        steps.push(`        element.click()`);
         if (act.waitCondition?.type === 'network_idle') {
-          steps.push(`    # Smart Wait: wait for network/DOM to stabilize`);
-          steps.push(`    wait.until(lambda d: d.execute_script("return document.readyState") == "complete")`);
+          steps.push(`        # Smart Wait: wait for network/DOM to stabilize`);
+          steps.push(`        wait.until(lambda d: d.execute_script("return document.readyState") == "complete")`);
         }
         steps.push('');
       } else if (act.type === 'input' && act.locator) {
-        steps.push(`    # ${act.targetElementDescription || 'Input text'}`);
+        steps.push(`        # ${act.targetElementDescription || 'Input text'}`);
         steps.push(
-          `    element = wait.until(EC.visibility_of_element_located((${this.getPythonBy(act.locator)})))`
+          `        element = wait.until(EC.visibility_of_element_located((${this.getPythonBy(act.locator)})))`
         );
-        steps.push(`    element.clear()`);
-        steps.push(`    element.send_keys("${(act.value || '').replace(/"/g, '\\"')}")`);
+        steps.push(`        element.clear()`);
+        steps.push(`        element.send_keys("${(act.value || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ')}")`);
         steps.push('');
       }
     });
@@ -339,36 +339,38 @@ export class RecorderManager {
   }
 
   private getPythonBy(locator: LocatorCandidate): string {
+    const cleanVal = locator.value.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
     switch (locator.type) {
       case 'id':
-        return `By.ID, "${locator.value}"`;
+        return `By.ID, "${cleanVal}"`;
       case 'name':
-        return `By.NAME, "${locator.value}"`;
+        return `By.NAME, "${cleanVal}"`;
       case 'data-testid':
       case 'aria':
       case 'css':
-        return `By.CSS_SELECTOR, "${locator.value.replace(/"/g, '\\"')}"`;
+        return `By.CSS_SELECTOR, "${cleanVal.replace(/"/g, '\\"')}"`;
       case 'xpath':
-        return `By.XPATH, "${locator.value.replace(/"/g, '\\"')}"`;
+        return `By.XPATH, "${cleanVal.replace(/"/g, '\\"')}"`;
       default:
-        return `By.CSS_SELECTOR, "${locator.value}"`;
+        return `By.CSS_SELECTOR, "${cleanVal}"`;
     }
   }
 
   private getJavaBy(locator: LocatorCandidate): string {
+    const cleanVal = locator.value.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
     switch (locator.type) {
       case 'id':
-        return `By.id("${locator.value}")`;
+        return `By.id("${cleanVal}")`;
       case 'name':
-        return `By.name("${locator.value}")`;
+        return `By.name("${cleanVal}")`;
       case 'data-testid':
       case 'aria':
       case 'css':
-        return `By.cssSelector("${locator.value.replace(/"/g, '\\"')}")`;
+        return `By.cssSelector("${cleanVal.replace(/"/g, '\\"')}")`;
       case 'xpath':
-        return `By.xpath("${locator.value.replace(/"/g, '\\"')}")`;
+        return `By.xpath("${cleanVal.replace(/"/g, '\\"')}")`;
       default:
-        return `By.cssSelector("${locator.value}")`;
+        return `By.cssSelector("${cleanVal}")`;
     }
   }
 }

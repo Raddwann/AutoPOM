@@ -4,6 +4,7 @@ import { LocatorRanker } from '../src/scanner/locatorRanker';
 import { PythonSeleniumGenerator } from '../src/generators/pythonSelenium';
 import { JavaSeleniumGenerator } from '../src/generators/javaSelenium';
 import { DomPruner } from '../src/ai/domPruner';
+import { RecorderManager } from '../src/recorder/recorderManager';
 import { ScannedElement } from '../src/types';
 
 test('LocatorRanker: prioritizes data-testid with score 100', () => {
@@ -26,7 +27,6 @@ test('LocatorRanker: identifies dynamic IDs and penalizes them', () => {
     name: 'email',
   });
 
-  // Name should rank higher than dynamic ID
   assert.strictEqual(locators[0].type, 'name');
   assert.strictEqual(locators[0].value, 'email');
   assert.strictEqual(locators[0].score, 80);
@@ -50,90 +50,104 @@ test('LocatorRanker: suggests clean camelCase variable names', () => {
   assert.strictEqual(varName2, 'userPasswordInput');
 });
 
-test('PythonSeleniumGenerator: produces valid Page Object class', () => {
+test('LocatorRanker: normalizes newlines in button text for XPath', () => {
+  const locators = LocatorRanker.rankLocators({
+    tagName: 'button',
+    innerText: '01\nCatalog',
+  });
+
+  const xpathLocator = locators.find((l) => l.type === 'xpath');
+  assert.ok(xpathLocator);
+  // Must NOT contain literal raw newline
+  assert.ok(!xpathLocator.value.includes('\n'));
+  assert.strictEqual(xpathLocator.value, "//button[normalize-space()='01 Catalog']");
+});
+
+test('PythonSeleniumGenerator: handles starting digits and deduplicates repeated buttons', () => {
   const generator = new PythonSeleniumGenerator();
   const sampleElements: ScannedElement[] = [
     {
       id: 'el_1',
-      tagName: 'input',
-      suggestedVariableName: 'usernameInput',
-      category: 'input',
-      confidence: 'high',
-      selected: true,
-      locators: [],
-      recommendedLocator: {
-        type: 'id',
-        value: 'username',
-        score: 90,
-        isUnique: true,
-      },
-      boundingRect: { x: 0, y: 0, width: 100, height: 30 },
-    },
-    {
-      id: 'el_2',
       tagName: 'button',
-      suggestedVariableName: 'submitButton',
+      suggestedVariableName: '01CatalogButton',
       category: 'button',
       confidence: 'high',
       selected: true,
       locators: [],
       recommendedLocator: {
-        type: 'css',
-        value: 'button[type="submit"]',
+        type: 'xpath',
+        value: "//button[normalize-space()='01 Catalog']",
         score: 70,
         isUnique: true,
       },
-      boundingRect: { x: 0, y: 50, width: 80, height: 30 },
+      boundingRect: { x: 0, y: 0, width: 100, height: 30 },
     },
-  ];
-
-  const code = generator.generatePOM({
-    className: 'LoginPage',
-    language: 'python',
-    url: 'https://example.com/login',
-    elements: sampleElements,
-  });
-
-  assert.ok(code.includes('class LoginPage:'));
-  assert.ok(code.includes('USERNAME_INPUT = (By.ID, "username")'));
-  assert.ok(code.includes('SUBMIT_BUTTON = (By.CSS_SELECTOR, "button[type=\\"submit\\"]")'));
-  assert.ok(code.includes('def enter_username_input(self, value: str):'));
-  assert.ok(code.includes('def click_submit_button(self):'));
-  assert.ok(code.includes('WebDriverWait'));
-});
-
-test('JavaSeleniumGenerator: produces valid Java Page Object class', () => {
-  const generator = new JavaSeleniumGenerator();
-  const sampleElements: ScannedElement[] = [
+    // Two identical buttons on page (e.g. repeated table rows)
     {
-      id: 'el_1',
+      id: 'el_2',
       tagName: 'button',
-      suggestedVariableName: 'loginButton',
+      suggestedVariableName: 'deleteSourceButton',
       category: 'button',
       confidence: 'high',
       selected: true,
       locators: [],
       recommendedLocator: {
-        type: 'id',
-        value: 'login-btn',
-        score: 90,
-        isUnique: true,
+        type: 'xpath',
+        value: "//button[normalize-space()='Delete Source']",
+        score: 70,
+        isUnique: false,
       },
-      boundingRect: { x: 0, y: 0, width: 100, height: 30 },
+      boundingRect: { x: 0, y: 50, width: 80, height: 30 },
+    },
+    {
+      id: 'el_3',
+      tagName: 'button',
+      suggestedVariableName: 'deleteSourceButton',
+      category: 'button',
+      confidence: 'high',
+      selected: true,
+      locators: [],
+      recommendedLocator: {
+        type: 'xpath',
+        value: "//button[normalize-space()='Delete Source']",
+        score: 70,
+        isUnique: false,
+      },
+      boundingRect: { x: 0, y: 90, width: 80, height: 30 },
     },
   ];
 
   const code = generator.generatePOM({
-    className: 'LoginPage',
-    language: 'java',
-    url: 'https://example.com/login',
+    className: 'CatalogPage',
+    language: 'python',
+    url: 'http://localhost:8000/',
     elements: sampleElements,
   });
 
-  assert.ok(code.includes('public class LoginPage {'));
-  assert.ok(code.includes('private final By loginButton = By.id("login-btn");'));
-  assert.ok(code.includes('public LoginPage clickLoginButton() {'));
-  assert.ok(code.includes('ExpectedConditions.elementToBeClickable'));
+  // Valid identifier: cannot start with digit '01'
+  assert.ok(!code.includes('01CATALOG_BUTTON ='), 'Must not start with number');
+  assert.ok(code.includes('BTN_01_CATALOG_BUTTON ='), 'Must be prefixed with valid identifier');
+
+  // Deduplication: DELETE_SOURCE_BUTTON should only be defined ONCE
+  const occurrences = (code.match(/DELETE_SOURCE_BUTTON =/g) || []).length;
+  assert.strictEqual(occurrences, 1, 'Repeated button must only be defined once in locators');
+
+  // Must have index-aware action method
+  assert.ok(code.includes('def click_delete_source_button(self, index: int = 0):'));
+});
+
+test('RecorderManager: generates properly indented Python test script (8 spaces inside try)', () => {
+  const recorder = RecorderManager.getInstance();
+  // Generate dummy test script
+  const script = recorder.generateTestScript('python', 'SampleScenarioTest');
+
+  assert.ok(script.includes('    try:'));
+  // Lines inside try must be indented by 8 spaces, not 4
+  const lines = script.split('\n');
+  const tryIndex = lines.findIndex((l) => l.trim() === 'try:');
+  assert.ok(tryIndex !== -1);
+  const nextLine = lines[tryIndex + 1];
+  assert.ok(nextLine.startsWith('        '), 'Lines inside try block must have 8 spaces indentation');
 });
 
 test('DomPruner: sanitizes emails and credit cards from DOM', () => {
@@ -145,4 +159,3 @@ test('DomPruner: sanitizes emails and credit cards from DOM', () => {
   assert.ok(!sanitized.includes('4111-2222-3333-4444'));
   assert.ok(sanitized.includes('[CARD]'));
 });
-

@@ -69,8 +69,8 @@ export class LocatorRanker {
     }
 
     // 5. Semantic XPath for buttons and links based on text
-    if (info.innerText && info.innerText.trim().length > 0 && info.innerText.length < 50) {
-      const cleanText = info.innerText.trim();
+    if (info.innerText && info.innerText.trim().length > 0 && info.innerText.length < 60) {
+      const cleanText = info.innerText.replace(/\s+/g, ' ').trim();
       const tag = info.tagName.toLowerCase();
       if (tag === 'button' || tag === 'a' || info.role === 'button') {
         candidates.push({
@@ -119,8 +119,8 @@ export class LocatorRanker {
       base = info.id;
     } else if (info.ariaLabel) {
       base = info.ariaLabel;
-    } else if (info.innerText && info.innerText.trim().length > 0 && info.innerText.length < 30) {
-      base = info.innerText.trim();
+    } else if (info.innerText && info.innerText.trim().length > 0 && info.innerText.length < 40) {
+      base = info.innerText.replace(/\s+/g, ' ').trim();
     } else if (info.placeholder) {
       base = info.placeholder;
     } else {
@@ -237,7 +237,7 @@ export class LocatorRanker {
   }
 
   private static toCamelCase(str: string): string {
-    return str
+    let res = str
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       .replace(/[^a-zA-Z0-9]/g, ' ')
       .trim()
@@ -248,15 +248,23 @@ export class LocatorRanker {
         if (idx === 0) return lower;
         return lower.charAt(0).toUpperCase() + lower.slice(1);
       })
-      .join('')
-      .replace(/^[0-9]/, '_$&') || 'element';
+      .join('') || 'element';
+
+    if (/^[0-9]/.test(res)) {
+      res = `btn_${res}`;
+    }
+    return res;
   }
 
   private static escapeSelector(str: string): string {
-    return str.replace(/["\\]/g, '\\$&');
+    return str.replace(/["\\]/g, '\\$&').replace(/\r?\n|\r/g, ' ');
   }
 
   private static escapeXPath(str: string): string {
-    return str.replace(/'/g, "\\'");
+    return str
+      .replace(/\s+/g, ' ')
+      .replace(/\r?\n|\r/g, ' ')
+      .replace(/'/g, "\\'")
+      .trim();
   }
 }

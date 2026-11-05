@@ -13,14 +13,47 @@ export class PythonSeleniumGenerator implements CodeGenerator {
     const locatorConstants: string[] = [];
     const actionMethods: string[] = [];
 
+    // Map locator signature -> metadata
+    const locatorSignatureMap = new Map<
+      string,
+      { constName: string; count: number; element: ScannedElement }
+    >();
+
+    // Map constName -> count (for deduplicating variable names for different locators)
+    const usedConstNames = new Map<string, number>();
+
+    // Step 1: Deduplicate and assign unique, valid constant names
     selectedElements.forEach((el) => {
-      const constName = this.toUpperSnakeCase(el.suggestedVariableName);
       const locatorTuple = this.toSeleniumBy(el.recommendedLocator);
 
+      if (locatorSignatureMap.has(locatorTuple)) {
+        // Same exact locator appears multiple times (e.g. repeated table row buttons)
+        locatorSignatureMap.get(locatorTuple)!.count++;
+      } else {
+        let baseConstName = this.toUpperSnakeCase(el.suggestedVariableName);
+
+        // Check if name was already used by a DIFFERENT locator
+        if (usedConstNames.has(baseConstName)) {
+          const nextIndex = usedConstNames.get(baseConstName)! + 1;
+          usedConstNames.set(baseConstName, nextIndex);
+          baseConstName = `${baseConstName}_${nextIndex}`;
+        } else {
+          usedConstNames.set(baseConstName, 1);
+        }
+
+        locatorSignatureMap.set(locatorTuple, {
+          constName: baseConstName,
+          count: 1,
+          element: el,
+        });
+      }
+    });
+
+    // Step 2: Generate declarations & methods for unique locators
+    locatorSignatureMap.forEach(({ constName, count, element }, locatorTuple) => {
       locatorConstants.push(`    ${constName} = ${locatorTuple}`);
 
-      // Generate action methods based on category
-      const method = this.generateActionMethod(el, constName);
+      const method = this.generateActionMethod(element, constName, count > 1);
       if (method) {
         actionMethods.push(method);
       }
@@ -56,28 +89,44 @@ export class PythonSeleniumGenerator implements CodeGenerator {
   }
 
   private toSeleniumBy(candidate: LocatorCandidate): string {
+    const cleanVal = this.escape(candidate.value);
     switch (candidate.type) {
       case 'id':
-        return `(By.ID, "${this.escape(candidate.value)}")`;
+        return `(By.ID, "${cleanVal}")`;
       case 'name':
-        return `(By.NAME, "${this.escape(candidate.value)}")`;
+        return `(By.NAME, "${cleanVal}")`;
       case 'data-testid':
       case 'aria':
       case 'css':
-        return `(By.CSS_SELECTOR, "${this.escape(candidate.value)}")`;
+        return `(By.CSS_SELECTOR, "${cleanVal}")`;
       case 'xpath':
-        return `(By.XPATH, "${this.escape(candidate.value)}")`;
+        return `(By.XPATH, "${cleanVal}")`;
       default:
-        return `(By.CSS_SELECTOR, "${this.escape(candidate.value)}")`;
+        return `(By.CSS_SELECTOR, "${cleanVal}")`;
     }
   }
 
-  private generateActionMethod(el: ScannedElement, constName: string): string {
+  private generateActionMethod(el: ScannedElement, constName: string, isRepeated: boolean): string {
     const varName = el.suggestedVariableName;
     const snakeName = this.toSnakeCase(varName);
 
     if (el.category === 'button' || el.category === 'link') {
       const methodName = snakeName.startsWith('click_') ? snakeName : `click_${snakeName}`;
+
+      if (isRepeated) {
+        // Multi-element row click method with index
+        return [
+          `    def ${methodName}(self, index: int = 0):`,
+          `        """Clicks the ${el.text || el.suggestedVariableName} element at given row/list index (default 0)."""`,
+          `        elements = self.wait.until(EC.presence_of_all_elements_located(self.${constName}))`,
+          `        if index >= len(elements):`,
+          `            raise IndexError(f"Index {index} out of bounds for ${constName} (total {len(elements)})")`,
+          `        elements[index].click()`,
+          '        return self',
+          '',
+        ].join('\n');
+      }
+
       return [
         `    def ${methodName}(self):`,
         `        """Clicks the ${el.text || el.suggestedVariableName} element."""`,
@@ -90,6 +139,19 @@ export class PythonSeleniumGenerator implements CodeGenerator {
 
     if (el.category === 'input') {
       const methodName = snakeName.startsWith('enter_') || snakeName.startsWith('set_') ? snakeName : `enter_${snakeName}`;
+
+      if (isRepeated) {
+        return [
+          `    def ${methodName}(self, value: str, index: int = 0):`,
+          `        """Enters text into ${el.placeholder || el.suggestedVariableName} at given index."""`,
+          `        elements = self.wait.until(EC.presence_of_all_elements_located(self.${constName}))`,
+          `        elements[index].clear()`,
+          `        elements[index].send_keys(value)`,
+          '        return self',
+          '',
+        ].join('\n');
+      }
+
       return [
         `    def ${methodName}(self, value: str):`,
         `        """Enters text into ${el.placeholder || el.suggestedVariableName}."""`,
@@ -113,7 +175,6 @@ export class PythonSeleniumGenerator implements CodeGenerator {
       ].join('\n');
     }
 
-    // Default getter
     return [
       `    def get_${snakeName}(self):`,
       `        return self.wait.until(EC.visibility_of_element_located(self.${constName}))`,
@@ -122,25 +183,42 @@ export class PythonSeleniumGenerator implements CodeGenerator {
   }
 
   private toUpperSnakeCase(str: string): string {
-    return str
+    let res = str
       .replace(/([A-Z])/g, '_$1')
       .replace(/[^a-zA-Z0-9_]/g, '_')
       .replace(/_{2,}/g, '_')
       .replace(/^_/, '')
       .toUpperCase();
+
+    // In Python, identifiers cannot start with a digit
+    if (/^[0-9]/.test(res)) {
+      res = `BTN_${res}`;
+    }
+
+    return res || 'ELEMENT';
   }
 
   private toSnakeCase(str: string): string {
-    return str
+    let res = str
       .replace(/([A-Z])/g, '_$1')
       .replace(/[^a-zA-Z0-9_]/g, '_')
       .replace(/_{2,}/g, '_')
       .replace(/^_/, '')
       .toLowerCase();
+
+    if (/^[0-9]/.test(res)) {
+      res = `item_${res}`;
+    }
+
+    return res || 'element';
   }
 
   private escape(str: string): string {
-    return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return str
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\r?\n|\r/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }
-

@@ -13,13 +13,45 @@ export class JavaSeleniumGenerator implements CodeGenerator {
     const locatorFields: string[] = [];
     const actionMethods: string[] = [];
 
+    // Map locator signature -> metadata
+    const locatorSignatureMap = new Map<
+      string,
+      { fieldName: string; count: number; element: ScannedElement }
+    >();
+
+    // Map fieldName -> count
+    const usedFieldNames = new Map<string, number>();
+
+    // Step 1: Deduplicate identical locators and prevent duplicate variable names
     selectedElements.forEach((el) => {
-      const fieldName = this.toCamelCase(el.suggestedVariableName);
       const locatorBy = this.toJavaBy(el.recommendedLocator);
 
+      if (locatorSignatureMap.has(locatorBy)) {
+        locatorSignatureMap.get(locatorBy)!.count++;
+      } else {
+        let baseFieldName = this.toCamelCase(el.suggestedVariableName);
+
+        if (usedFieldNames.has(baseFieldName)) {
+          const nextIndex = usedFieldNames.get(baseFieldName)! + 1;
+          usedFieldNames.set(baseFieldName, nextIndex);
+          baseFieldName = `${baseFieldName}${nextIndex}`;
+        } else {
+          usedFieldNames.set(baseFieldName, 1);
+        }
+
+        locatorSignatureMap.set(locatorBy, {
+          fieldName: baseFieldName,
+          count: 1,
+          element: el,
+        });
+      }
+    });
+
+    // Step 2: Generate field declarations and action methods
+    locatorSignatureMap.forEach(({ fieldName, count, element }, locatorBy) => {
       locatorFields.push(`    private final By ${fieldName} = ${locatorBy};`);
 
-      const method = this.generateActionMethod(el, fieldName, className);
+      const method = this.generateActionMethod(element, fieldName, className, count > 1);
       if (method) {
         actionMethods.push(method);
       }
@@ -34,6 +66,7 @@ export class JavaSeleniumGenerator implements CodeGenerator {
       'import org.openqa.selenium.support.ui.ExpectedConditions;',
       'import org.openqa.selenium.support.ui.WebDriverWait;',
       'import java.time.Duration;',
+      'import java.util.List;',
       '',
       '/**',
       ` * Page Object Model for ${className}`,
@@ -65,27 +98,49 @@ export class JavaSeleniumGenerator implements CodeGenerator {
   }
 
   private toJavaBy(candidate: LocatorCandidate): string {
+    const cleanVal = this.escape(candidate.value);
     switch (candidate.type) {
       case 'id':
-        return `By.id("${this.escape(candidate.value)}")`;
+        return `By.id("${cleanVal}")`;
       case 'name':
-        return `By.name("${this.escape(candidate.value)}")`;
+        return `By.name("${cleanVal}")`;
       case 'data-testid':
       case 'aria':
       case 'css':
-        return `By.cssSelector("${this.escape(candidate.value)}")`;
+        return `By.cssSelector("${cleanVal}")`;
       case 'xpath':
-        return `By.xpath("${this.escape(candidate.value)}")`;
+        return `By.xpath("${cleanVal}")`;
       default:
-        return `By.cssSelector("${this.escape(candidate.value)}")`;
+        return `By.cssSelector("${cleanVal}")`;
     }
   }
 
-  private generateActionMethod(el: ScannedElement, fieldName: string, className: string): string {
+  private generateActionMethod(
+    el: ScannedElement,
+    fieldName: string,
+    className: string,
+    isRepeated: boolean
+  ): string {
     const capitalized = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
 
     if (el.category === 'button' || el.category === 'link') {
       const methodName = capitalized.startsWith('Click') ? fieldName : `click${capitalized}`;
+
+      if (isRepeated) {
+        return [
+          `    public ${className} ${methodName}(int index) {`,
+          `        List<WebElement> elements = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(${fieldName}));`,
+          '        elements.get(index).click();',
+          '        return this;',
+          '    }',
+          '',
+          `    public ${className} ${methodName}() {`,
+          `        return ${methodName}(0);`,
+          '    }',
+          '',
+        ].join('\n');
+      }
+
       return [
         `    public ${className} ${methodName}() {`,
         `        WebElement element = wait.until(ExpectedConditions.elementToBeClickable(${fieldName}));`,
@@ -97,7 +152,24 @@ export class JavaSeleniumGenerator implements CodeGenerator {
     }
 
     if (el.category === 'input') {
-      const methodName = capitalized.startsWith('Enter') || capitalized.startsWith('Set') ? fieldName : `enter${capitalized}`;
+      const methodName =
+        capitalized.startsWith('Enter') || capitalized.startsWith('Set')
+          ? fieldName
+          : `enter${capitalized}`;
+
+      if (isRepeated) {
+        return [
+          `    public ${className} ${methodName}(String value, int index) {`,
+          `        List<WebElement> elements = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(${fieldName}));`,
+          '        WebElement element = elements.get(index);',
+          '        element.clear();',
+          '        element.sendKeys(value);',
+          '        return this;',
+          '    }',
+          '',
+        ].join('\n');
+      }
+
       return [
         `    public ${className} ${methodName}(String value) {`,
         `        WebElement element = wait.until(ExpectedConditions.visibilityOfElementLocated(${fieldName}));`,
@@ -130,7 +202,7 @@ export class JavaSeleniumGenerator implements CodeGenerator {
   }
 
   private toCamelCase(str: string): string {
-    return str
+    let res = str
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       .replace(/[^a-zA-Z0-9]/g, ' ')
       .trim()
@@ -141,11 +213,21 @@ export class JavaSeleniumGenerator implements CodeGenerator {
         if (idx === 0) return lower;
         return lower.charAt(0).toUpperCase() + lower.slice(1);
       })
-      .join('')
-      .replace(/^[0-9]/, '_$&') || 'element';
+      .join('') || 'element';
+
+    if (/^[0-9]/.test(res)) {
+      res = `btn_${res}`;
+    }
+
+    return res;
   }
 
   private escape(str: string): string {
-    return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return str
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\r?\n|\r/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }

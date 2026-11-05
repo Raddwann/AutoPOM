@@ -92,8 +92,8 @@ export class DomExtractor {
           dataTestId: getDataTestId(el),
           href: el.getAttribute('href') || '',
           rect: {
-            x: Math.round(rect.x + window.scrollX),
-            y: Math.round(rect.y + window.scrollY),
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
             width: Math.round(rect.width),
             height: Math.round(rect.height),
           },
@@ -164,29 +164,39 @@ export class DomExtractor {
 
         root = document.createElement('div');
         root.id = CONTAINER_ID;
-        root.style.position = 'absolute';
-        root.style.top = '0';
-        root.style.left = '0';
-        root.style.width = '100%';
-        root.style.height = '100%';
+        root.style.position = 'fixed';
+        root.style.top = '0px';
+        root.style.left = '0px';
+        root.style.width = '100vw';
+        root.style.height = '100vh';
         root.style.pointerEvents = 'none';
-        root.style.zIndex = '2147483640';
-        document.body.appendChild(root);
+        root.style.zIndex = '2147483647';
+        root.style.overflow = 'hidden';
+        document.documentElement.appendChild(root);
+
+        const badgeElements: { badge: HTMLElement; outline: HTMLElement; targetEl?: Element }[] = [];
+
+        // Collect matching DOM elements
+        const INTERACTIVE_SELECTORS = [
+          'button', 'input', 'select', 'textarea', 'a[href]',
+          '[role="button"]', '[role="link"]', '[role="checkbox"]',
+          '[role="radio"]', '[role="tab"]', '[role="menuitem"]', '[onclick]'
+        ].join(',');
+        const liveDomElements = Array.from(document.querySelectorAll(INTERACTIVE_SELECTORS));
 
         elementsData.forEach((item, idx) => {
           const rect = item.boundingRect;
           if (!rect || rect.width === 0 || rect.height === 0) return;
 
-          const badge = document.createElement('div');
-          badge.className = 'autopom-badge';
-          badge.textContent = '#' + (idx + 1);
-
           const isHigh = item.confidence === 'high';
           const isMed = item.confidence === 'medium';
           const bg = isHigh ? '#10b981' : (isMed ? '#f59e0b' : '#ef4444');
 
-          badge.style.position = 'absolute';
-          badge.style.left = rect.x + 'px';
+          const badge = document.createElement('div');
+          badge.className = 'autopom-badge';
+          badge.textContent = '#' + (idx + 1);
+          badge.style.position = 'fixed';
+          badge.style.left = Math.max(0, rect.x) + 'px';
           badge.style.top = Math.max(0, rect.y - 18) + 'px';
           badge.style.backgroundColor = bg;
           badge.style.color = '#ffffff';
@@ -197,7 +207,7 @@ export class DomExtractor {
           badge.style.boxShadow = '0 1px 4px rgba(0,0,0,0.3)';
           badge.style.pointerEvents = 'auto';
           badge.style.cursor = 'pointer';
-          badge.style.zIndex = '2147483645';
+          badge.style.zIndex = '2147483647';
           badge.title =
             (item.suggestedVariableName || '') +
             ' (' +
@@ -207,7 +217,7 @@ export class DomExtractor {
             ')';
 
           const outline = document.createElement('div');
-          outline.style.position = 'absolute';
+          outline.style.position = 'fixed';
           outline.style.left = rect.x + 'px';
           outline.style.top = rect.y + 'px';
           outline.style.width = rect.width + 'px';
@@ -223,7 +233,37 @@ export class DomExtractor {
 
           root.appendChild(badge);
           root.appendChild(outline);
+
+          badgeElements.push({
+            badge,
+            outline,
+            targetEl: liveDomElements[idx],
+          });
         });
+
+        // Dynamic update on scroll
+        const updatePositions = () => {
+          badgeElements.forEach(({ badge, outline, targetEl }) => {
+            if (!targetEl || !targetEl.getBoundingClientRect) return;
+            const r = targetEl.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.bottom < 0 || r.top > window.innerHeight) {
+              badge.style.display = 'none';
+              outline.style.display = 'none';
+            } else {
+              badge.style.display = 'block';
+              outline.style.display = 'block';
+              badge.style.left = Math.max(0, r.left) + 'px';
+              badge.style.top = Math.max(0, r.top - 18) + 'px';
+              outline.style.left = r.left + 'px';
+              outline.style.top = r.top + 'px';
+              outline.style.width = r.width + 'px';
+              outline.style.height = r.height + 'px';
+            }
+          });
+        };
+
+        window.addEventListener('scroll', updatePositions, { capture: true, passive: true });
+        window.addEventListener('resize', updatePositions, { passive: true });
       }, scannedElements);
     } catch (err) {
       console.warn('[AutoPOM] Could not render visual overlay on page:', err);
