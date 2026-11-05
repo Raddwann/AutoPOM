@@ -1,0 +1,136 @@
+{
+  "name": "autopom",
+  "displayName": "AutoPOM - Selenium QA Copilot",
+  "description": "Smart Page Object Model scanner, recorder, and network-aware test generator for Selenium in VS Code & Antigravity IDE",
+  "version": "0.1.0",
+  "publisher": "autopom",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Testing",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "selenium",
+    "qa",
+    "automation",
+    "page-object-model",
+    "pom",
+    "test-generator"
+  ],
+  "activationEvents": [
+    "onView:autopom.sidebarView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "autopom-container",
+          "title": "AutoPOM",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "autopom-container": [
+        {
+          "type": "webview",
+          "id": "autopom.sidebarView",
+          "name": "AutoPOM Assistant"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "autopom.launchBrowser",
+        "title": "AutoPOM: Launch & Connect Browser",
+        "category": "AutoPOM"
+      },
+      {
+        "command": "autopom.scanPage",
+        "title": "AutoPOM: Scan Active Page",
+        "category": "AutoPOM"
+      },
+      {
+        "command": "autopom.startRecording",
+        "title": "AutoPOM: Start Recording",
+        "category": "AutoPOM"
+      },
+      {
+        "command": "autopom.stopRecording",
+        "title": "AutoPOM: Stop Recording",
+        "category": "AutoPOM"
+      }
+    ],
+    "configuration": {
+      "title": "AutoPOM",
+      "properties": {
+        "autopom.chromePath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to Google Chrome or Chromium executable. If empty, standard system locations are searched."
+        },
+        "autopom.cdpPort": {
+          "type": "number",
+          "default": 9222,
+          "description": "Chrome remote debugging port."
+        },
+        "autopom.defaultLanguage": {
+          "type": "string",
+          "enum": [
+            "python",
+            "java"
+          ],
+          "default": "python",
+          "description": "Default programming language for generated Page Object Model classes."
+        },
+        "autopom.aiProvider": {
+          "type": "string",
+          "enum": [
+            "gemini",
+            "openai",
+            "anthropic",
+            "ollama"
+          ],
+          "default": "gemini",
+          "description": "AI provider used for semantic naming and element grouping."
+        },
+        "autopom.aiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for cloud LLM providers (Gemini, OpenAI, Anthropic)."
+        },
+        "autopom.ollamaEndpoint": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Endpoint for local Ollama instance."
+        },
+        "autopom.ollamaModel": {
+          "type": "string",
+          "default": "qwen2.5-coder:latest",
+          "description": "Model tag to use with local Ollama."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "compile": "tsc -p ./",
+    "watch": "node esbuild.js --watch",
+    "build": "node esbuild.js --production",
+    "typecheck": "tsc --noEmit",
+    "test": "node esbuild.js --test && node --test dist/tests.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.4.0"
+  }
+}

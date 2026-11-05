@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{styleUri}}">
+  <title>AutoPOM Assistant</title>
+</head>
+<body>
+  <div class="container">
+    <!-- Header & Status -->
+    <header class="header">
+      <div class="title-row">
+        <h3>AutoPOM Assistant</h3>
+        <span id="connectionBadge" class="badge disconnected">Disconnected</span>
+      </div>
+      <p class="subtitle">Selenium Page Object Model & Test Copilot</p>
+    </header>
+
+    <!-- Top Action Controls -->
+    <div class="section-card">
+      <button id="btnLaunch" class="btn primary full-width">
+        <span class="icon">🚀</span> Launch & Connect Chrome
+      </button>
+
+      <div class="btn-group">
+        <button id="btnScan" class="btn secondary" disabled>
+          <span class="icon">🔍</span> Scan Page
+        </button>
+        <button id="btnRecord" class="btn secondary" disabled>
+          <span class="icon">⏺</span> Record
+        </button>
+      </div>
+
+      <div id="recordingBanner" class="recording-banner hidden">
+        <span class="pulse-dot"></span>
+        <span id="recordingText">Recording in progress... (0 actions)</span>
+      </div>
+    </div>
+
+    <!-- Configuration Strip -->
+    <div class="section-card config-card">
+      <div class="config-row">
+        <label for="selectLanguage">Target Language:</label>
+        <select id="selectLanguage">
+          <option value="python" selected>Python (Selenium)</option>
+          <option value="java">Java (Selenium)</option>
+        </select>
+      </div>
+      <div class="config-row">
+        <label for="inputClassName">Page Class Name:</label>
+        <input type="text" id="inputClassName" placeholder="e.g. LoginPage" value="LoginPage">
+      </div>
+    </div>
+
+    <!-- Scanned Elements Section -->
+    <div class="section-header">
+      <span class="section-title">Interactive Elements</span>
+      <span id="elementCountBadge" class="count-badge">0 found</span>
+    </div>
+
+    <div id="elementsEmptyState" class="empty-state">
+      <p>No elements scanned yet.</p>
+      <p class="hint">Click <strong>Launch & Connect Chrome</strong>, then navigate to your target page and click <strong>Scan Page</strong>.</p>
+    </div>
+
+    <div id="elementsContainer" class="elements-list hidden"></div>
+
+    <!-- Generation Actions -->
+    <div id="actionsFooter" class="actions-footer hidden">
+      <button id="btnAiRefactor" class="btn secondary full-width">
+        <span class="icon">✨</span> Refine with AI (Names & Groups)
+      </button>
+      <button id="btnGeneratePOM" class="btn primary full-width">
+        <span class="icon">📄</span> Export Page Object Model
+      </button>
+      <button id="btnGenerateTest" class="btn outline full-width hidden">
+        <span class="icon">🧪</span> Export Recorded Test Script
+      </button>
+    </div>
+  </div>
+
+  <script src="{{scriptUri}}"></script>
+</body>
+</html>
