@@ -75,3 +75,4 @@ export async function deactivate() {
   console.log('[AutoPOM] Extension deactivating. Closing browser if open...');
   await BrowserManager.getInstance().closeBrowser();
 }
+

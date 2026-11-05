@@ -101,3 +101,4 @@ export const INJECTED_SCANNER_FN_STRING = `
   };
 })()
 `;
+

@@ -214,3 +214,4 @@
   // Initial check
   vscode.postMessage({ type: 'checkStatus' });
 })();
+

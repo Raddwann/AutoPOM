@@ -226,9 +226,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private getHtmlForWebview(webview: vscode.Webview): string {
-    const htmlPath = path.join(this.extensionUri.fsPath, 'src', 'views', 'webview', 'index.html');
-    const stylePath = path.join(this.extensionUri.fsPath, 'src', 'views', 'webview', 'style.css');
-    const scriptPath = path.join(this.extensionUri.fsPath, 'src', 'views', 'webview', 'main.js');
+    const distWebviewDir = path.join(this.extensionUri.fsPath, 'dist', 'webview');
+    const baseDir = fs.existsSync(distWebviewDir)
+      ? distWebviewDir
+      : path.join(this.extensionUri.fsPath, 'src', 'views', 'webview');
+
+    const htmlPath = path.join(baseDir, 'index.html');
+    const stylePath = path.join(baseDir, 'style.css');
+    const scriptPath = path.join(baseDir, 'main.js');
 
     const styleUri = webview.asWebviewUri(vscode.Uri.file(stylePath));
     const scriptUri = webview.asWebviewUri(vscode.Uri.file(scriptPath));
@@ -240,3 +245,4 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     return html;
   }
 }
+

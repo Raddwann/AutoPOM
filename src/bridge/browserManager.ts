@@ -190,3 +190,4 @@ export class BrowserManager {
     vscode.commands.executeCommand('setContext', 'autopom.browserConnected', true);
   }
 }
+

@@ -38,3 +38,4 @@ export class DomPruner {
     return clean;
   }
 }
+

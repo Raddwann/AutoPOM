@@ -25,3 +25,4 @@ Rules:
 3. Keep pageClassName concise and standard (e.g., LoginPage, CheckoutPage, DashboardPage).
 4. Do NOT include markdown code blocks (e.g. \`\`\`json), return raw JSON only.
 `;
+

@@ -73,3 +73,4 @@ export interface AIProviderConfig {
   endpoint?: string;
   model?: string;
 }
+

@@ -4,3 +4,4 @@ export interface CodeGenerator {
   generatePOM(options: POMGeneratorOptions): string;
   getFileExtension(): string;
 }
+

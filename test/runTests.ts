@@ -145,3 +145,4 @@ test('DomPruner: sanitizes emails and credit cards from DOM', () => {
   assert.ok(!sanitized.includes('4111-2222-3333-4444'));
   assert.ok(sanitized.includes('[CARD]'));
 });
+

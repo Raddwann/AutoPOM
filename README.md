@@ -81,3 +81,4 @@ npm run watch
 | `autopom.aiApiKey` | string | `""` | API key for cloud LLMs (Gemini / OpenAI). |
 | `autopom.ollamaEndpoint` | string | `"http://localhost:11434"` | Endpoint for local on-premise Ollama instances. |
 | `autopom.ollamaModel` | string | `"qwen2.5-coder:latest"` | Model tag for local inference. |
+
