@@ -80,10 +80,7 @@ export class RecorderManager {
           name: el.getAttribute('name') || '',
           type: el.getAttribute('type') || '',
           className: typeof el.className === 'string' ? el.className.trim() : '',
-          innerText: (el.textContent || el.innerText || '')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .slice(0, 100),
+          innerText: (el.innerText || el.textContent || '').trim().slice(0, 100),
           placeholder: el.getAttribute('placeholder') || '',
           ariaLabel: el.getAttribute('aria-label') || '',
           role: el.getAttribute('role') || '',
@@ -363,6 +360,7 @@ export class RecorderManager {
         steps.push(
           `        element = wait.until(EC.element_to_be_clickable((${this.getPythonBy(act.locator)})))`
         );
+        steps.push(`        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)`);
         steps.push(`        element.click()`);
         if (act.waitCondition?.type === 'network_idle') {
           steps.push(`        # Smart Wait: wait for network/DOM to stabilize`);
@@ -426,8 +424,12 @@ export class RecorderManager {
       } else if (act.type === 'click' && act.locator) {
         steps.push(`        // ${act.targetElementDescription || 'Click element'}`);
         steps.push(
-          `        wait.until(ExpectedConditions.elementToBeClickable(${this.getJavaBy(act.locator)})).click();`
+          `        WebElement clickEl = wait.until(ExpectedConditions.elementToBeClickable(${this.getJavaBy(act.locator)}));`
         );
+        steps.push(
+          `        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", clickEl);`
+        );
+        steps.push(`        clickEl.click();`);
         steps.push('');
       } else if (act.type === 'input' && act.locator) {
         steps.push(`        // ${act.targetElementDescription || 'Input text'}`);

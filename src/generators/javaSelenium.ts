@@ -66,6 +66,7 @@ export class JavaSeleniumGenerator implements CodeGenerator {
       'package pages;',
       '',
       'import org.openqa.selenium.By;',
+      'import org.openqa.selenium.JavascriptExecutor;',
       'import org.openqa.selenium.WebDriver;',
       'import org.openqa.selenium.WebElement;',
       'import org.openqa.selenium.support.ui.ExpectedConditions;',
@@ -135,6 +136,7 @@ export class JavaSeleniumGenerator implements CodeGenerator {
         return [
           `    public ${className} ${methodName}(int index) {`,
           `        List<WebElement> elements = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(${fieldName}));`,
+          `        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", elements.get(index));`,
           '        elements.get(index).click();',
           '        return this;',
           '    }',
@@ -149,6 +151,7 @@ export class JavaSeleniumGenerator implements CodeGenerator {
       return [
         `    public ${className} ${methodName}() {`,
         `        WebElement element = wait.until(ExpectedConditions.elementToBeClickable(${fieldName}));`,
+        `        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", element);`,
         '        element.click();',
         '        return this;',
         '    }',

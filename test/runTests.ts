@@ -50,16 +50,20 @@ test('LocatorRanker: suggests clean camelCase variable names', () => {
   assert.strictEqual(varName2, 'userPasswordInput');
 });
 
-test('LocatorRanker: normalizes newlines in button text for XPath', () => {
+test('LocatorRanker: generates multi-segment contains XPath for multi-line elements', () => {
   const locators = LocatorRanker.rankLocators({
     tagName: 'button',
     innerText: '01\nCatalog',
   });
 
-  const xpathLocator = locators.find((l) => l.type === 'xpath');
-  assert.ok(xpathLocator);
-  assert.ok(!xpathLocator.value.includes('\n'));
-  assert.strictEqual(xpathLocator.value, "//button[normalize-space()='01 Catalog']");
+  const topXpath = locators.find((l) => l.type === 'xpath');
+  assert.ok(topXpath);
+  assert.ok(!topXpath.value.includes('\n'));
+  assert.strictEqual(topXpath.value, "//button[contains(., '01') and contains(., 'Catalog')]");
+
+  const normalizeXpath = locators.filter((l) => l.type === 'xpath')[1];
+  assert.ok(normalizeXpath);
+  assert.strictEqual(normalizeXpath.value, "//button[normalize-space()='01 Catalog']");
 });
 
 test('LocatorRanker: toMethodName produces unified, matching method names for POM and Recorder', () => {

@@ -69,10 +69,30 @@ export class LocatorRanker {
     }
 
     // 5. Semantic XPath for buttons and links based on text
-    if (info.innerText && info.innerText.trim().length > 0 && info.innerText.length < 60) {
-      const cleanText = info.innerText.replace(/\s+/g, ' ').trim();
+    if (info.innerText && info.innerText.trim().length > 0 && info.innerText.length < 80) {
       const tag = info.tagName.toLowerCase();
-      if (tag === 'button' || tag === 'a' || info.role === 'button') {
+      if (tag === 'button' || tag === 'a' || info.role === 'button' || info.role === 'tab') {
+        const rawLines = info.innerText
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+
+        if (rawLines.length > 1 && rawLines.length <= 4) {
+          // Multi-segment element (e.g. badge/number + label, icon + text)
+          // Matching all distinct parts with contains(., '...') works universally
+          // regardless of whether the HTML source has whitespace between child tags or not.
+          const conditions = rawLines
+            .map((line) => `contains(., '${this.escapeXPath(line)}')`)
+            .join(' and ');
+          candidates.push({
+            type: 'xpath',
+            value: `//${tag}[${conditions}]`,
+            score: 75,
+            isUnique: true,
+          });
+        }
+
+        const cleanText = info.innerText.replace(/\s+/g, ' ').trim();
         candidates.push({
           type: 'xpath',
           value: `//${tag}[normalize-space()='${this.escapeXPath(cleanText)}']`,
