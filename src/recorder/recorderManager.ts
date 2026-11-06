@@ -80,7 +80,10 @@ export class RecorderManager {
           name: el.getAttribute('name') || '',
           type: el.getAttribute('type') || '',
           className: typeof el.className === 'string' ? el.className.trim() : '',
-          innerText: (el.innerText || el.textContent || '').trim().slice(0, 100),
+          innerText: (el.textContent || el.innerText || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 100),
           placeholder: el.getAttribute('placeholder') || '',
           ariaLabel: el.getAttribute('aria-label') || '',
           role: el.getAttribute('role') || '',
