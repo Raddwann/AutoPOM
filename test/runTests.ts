@@ -125,6 +125,17 @@ test('PythonSeleniumGenerator: handles starting digits and deduplicates repeated
     },
   ];
 
+  // Test when className starts with a number like "01catalogPage"
+  const codeWithDigitClass = generator.generatePOM({
+    className: '01catalogPage',
+    language: 'python',
+    url: 'http://localhost:8000/',
+    elements: sampleElements,
+  });
+
+  assert.ok(!codeWithDigitClass.includes('class 01catalogPage:'), 'Class name must not start with a digit in Python');
+  assert.ok(codeWithDigitClass.includes('class Page01catalogPage:'), 'Class name starting with digit must be prefixed');
+
   const code = generator.generatePOM({
     className: 'CatalogPage',
     language: 'python',

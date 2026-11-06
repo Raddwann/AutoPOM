@@ -228,7 +228,11 @@ export class RecorderManager {
   /**
    * Generates Python test using Page Object Model methods
    */
-  public generatePythonPomTestScript(pageClassName: string = 'LoginPage'): string {
+  public generatePythonPomTestScript(rawPageClassName: string = 'LoginPage'): string {
+    let pageClassName = rawPageClassName.replace(/[^a-zA-Z0-9_]/g, '');
+    if (/^[0-9]/.test(pageClassName)) {
+      pageClassName = `Page${pageClassName}`;
+    }
     const snakeClass = this.toSnakeCase(pageClassName);
     const testFunc = `test_${this.toSnakeCase(pageClassName.replace(/Page$/, ''))}_scenario`;
 
@@ -275,7 +279,11 @@ export class RecorderManager {
   /**
    * Generates Java test using Page Object Model methods with JUnit 5
    */
-  public generateJavaPomTestScript(pageClassName: string = 'LoginPage'): string {
+  public generateJavaPomTestScript(rawPageClassName: string = 'LoginPage'): string {
+    let pageClassName = rawPageClassName.replace(/[^a-zA-Z0-9_]/g, '');
+    if (/^[0-9]/.test(pageClassName)) {
+      pageClassName = `Page${pageClassName}`;
+    }
     const testClassName = pageClassName.endsWith('Page')
       ? pageClassName.slice(0, -4) + 'Test'
       : `${pageClassName}Test`;
@@ -396,10 +404,14 @@ export class RecorderManager {
   /**
    * Standalone Java script with inline WebDriverWait calls
    */
-  public generateJavaStandaloneScript(className: string = 'RecordedScenarioTest'): string {
+  public generateJavaStandaloneScript(rawClassName: string = 'RecordedScenarioTest'): string {
+    let className = rawClassName.replace(/[^a-zA-Z0-9_]/g, '');
+    if (/^[0-9]/.test(className)) {
+      className = `Test${className}`;
+    }
     const testClassName = className.endsWith('Page')
       ? className.slice(0, -4) + 'Test'
-      : `${className}Test`;
+      : (className.endsWith('Test') ? className : `${className}Test`);
 
     const steps: string[] = [];
 

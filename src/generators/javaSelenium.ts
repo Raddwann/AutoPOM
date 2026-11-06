@@ -8,7 +8,11 @@ export class JavaSeleniumGenerator implements CodeGenerator {
   }
 
   public generatePOM(options: POMGeneratorOptions): string {
-    const { className, url, elements } = options;
+    const { className: rawClassName, url, elements } = options;
+    let className = rawClassName.replace(/[^a-zA-Z0-9_]/g, '');
+    if (/^[0-9]/.test(className)) {
+      className = `Page${className}`;
+    }
     const selectedElements = elements.filter((el) => el.selected);
 
     const locatorFields: string[] = [];

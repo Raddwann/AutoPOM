@@ -289,14 +289,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       .split(/\s+/)
       .filter((w) => w && !stopWords.has(w.toLowerCase()));
 
-    if (words.length === 0) return 'CustomPage';
+    // Filter out purely numeric step numbers (e.g. "01", "02") so class name becomes "CatalogPage"
+    let nonDigitWords = words.filter((w) => !/^[0-9]+$/.test(w));
+    if (nonDigitWords.length === 0) {
+      nonDigitWords = words;
+    }
+
+    if (nonDigitWords.length === 0) return 'CustomPage';
 
     // If title has many words, pick the last 2-3 significant words for clean conciseness
-    const selectedWords = words.length > 3 ? words.slice(-3) : words;
+    const selectedWords = nonDigitWords.length > 3 ? nonDigitWords.slice(-3) : nonDigitWords;
 
-    const pascal = selectedWords
+    let pascal = selectedWords
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
       .join('');
+
+    // Ensure valid identifier (cannot start with number in Python or Java)
+    if (/^[0-9]/.test(pascal)) {
+      pascal = `Page${pascal}`;
+    }
 
     return pascal.endsWith('Page') ? pascal : `${pascal}Page`;
   }
