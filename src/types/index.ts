@@ -52,9 +52,12 @@ export interface POMGeneratorOptions {
   baseClass?: string;
 }
 
+export type ActionType = 'click' | 'input' | 'navigation' | 'smart_wait' | 'assert';
+export type AssertionType = 'visible' | 'text_contains' | 'state' | 'hidden';
+
 export interface RecordedAction {
   id: string;
-  type: 'click' | 'input' | 'navigation' | 'smart_wait';
+  type: ActionType;
   timestamp: number;
   locator?: LocatorCandidate;
   value?: string;
@@ -62,6 +65,8 @@ export interface RecordedAction {
   suggestedVariableName?: string;
   category?: ElementCategory;
   url?: string;
+  assertionType?: AssertionType;
+  expectedValue?: string;
   waitCondition?: {
     type: 'network_idle' | 'element_visible' | 'element_clickable';
     target?: string;
@@ -74,5 +79,6 @@ export interface AIProviderConfig {
   apiKey?: string;
   endpoint?: string;
   model?: string;
+  geminiModel?: string;
 }
 

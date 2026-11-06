@@ -106,7 +106,7 @@ export class DomExtractor {
           type: el.getAttribute('type') || '',
           className: typeof el.className === 'string' ? el.className.trim() : '',
           // Extract textContent so XPath normalize-space() matches the true DOM string nodes without CSS line-break insertions
-          innerText: (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 100),
+          innerText: (el.textContent || (el as HTMLElement).innerText || '').replace(/\s+/g, ' ').trim().slice(0, 100),
           placeholder: el.getAttribute('placeholder') || '',
           ariaLabel: el.getAttribute('aria-label') || '',
           role: el.getAttribute('role') || '',

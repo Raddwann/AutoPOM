@@ -14,6 +14,7 @@
   const btnLaunch = document.getElementById('btnLaunch');
   const btnScan = document.getElementById('btnScan');
   const btnRecord = document.getElementById('btnRecord');
+  const btnToggleAssert = document.getElementById('btnToggleAssert');
   const recordingBanner = document.getElementById('recordingBanner');
   const recordingText = document.getElementById('recordingText');
   const selectLanguage = document.getElementById('selectLanguage');
@@ -85,6 +86,10 @@
       btnRecord.textContent = 'Stopping...';
       vscode.postMessage({ type: 'stopRecording' });
     }
+  });
+
+  btnToggleAssert.addEventListener('click', () => {
+    vscode.postMessage({ type: 'toggleAssertionMode' });
   });
 
   btnAiRefactor.addEventListener('click', () => {
@@ -164,6 +169,16 @@
         renderRecordedList();
         break;
 
+      case 'assertionModeChanged':
+        if (message.enabled) {
+          btnToggleAssert.classList.add('active');
+          btnToggleAssert.innerHTML = '<span class="icon">🎯</span> Asserting (Active)';
+        } else {
+          btnToggleAssert.classList.remove('active');
+          btnToggleAssert.innerHTML = '<span class="icon">🎯</span> Assert';
+        }
+        break;
+
       case 'aiRefactorCompleted':
         btnAiRefactor.disabled = false;
         btnAiRefactor.innerHTML = '<span class="icon">✨</span> Refine with AI (Names & Groups)';
@@ -199,6 +214,7 @@
       btnNavigate.disabled = false;
       btnScan.disabled = false;
       btnRecord.disabled = false;
+      btnToggleAssert.disabled = false;
     } else {
       connectionBadge.textContent = 'Disconnected';
       connectionBadge.className = 'badge disconnected';
@@ -207,6 +223,7 @@
       btnNavigate.disabled = true;
       btnScan.disabled = true;
       btnRecord.disabled = true;
+      btnToggleAssert.disabled = true;
     }
   }
 
@@ -259,6 +276,10 @@
         title.textContent = `${idx + 1}. Click: ${act.targetElementDescription || 'element'}`;
       } else if (act.type === 'input') {
         title.textContent = `${idx + 1}. Input: "${act.value || ''}" into ${act.targetElementDescription || 'element'}`;
+      } else if (act.type === 'assert') {
+        const assertLabel = (act.assertionType || 'visible').toUpperCase();
+        const expected = act.expectedValue ? ` "${act.expectedValue}"` : '';
+        title.textContent = `${idx + 1}. Assert [${assertLabel}]: ${act.targetElementDescription || 'element'}${expected}`;
       }
 
       details.appendChild(title);

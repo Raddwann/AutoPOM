@@ -66,6 +66,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             await this.handleStopRecording();
             break;
 
+          case 'toggleAssertionMode':
+            await this.handleToggleAssertionMode();
+            break;
+
           case 'aiRefactor':
             await this.handleAiRefactor(data.className, data.elements);
             break;
@@ -196,6 +200,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
     } catch (err: any) {
       vscode.window.showErrorMessage(`AutoPOM Stop Recording error: ${err.message}`);
+    }
+  }
+
+  private async handleToggleAssertionMode(): Promise<void> {
+    try {
+      const page = await BrowserManager.getInstance().getActivePage();
+      const enabled = await RecorderManager.getInstance().toggleAssertionMode(page);
+      this.view?.webview.postMessage({
+        type: 'assertionModeChanged',
+        enabled,
+      });
+      vscode.window.showInformationMessage(
+        enabled
+          ? 'AutoPOM: Assertion Mode ACTIVE. Click any element in Chrome to record an assertion.'
+          : 'AutoPOM: Assertion Mode OFF.'
+      );
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`AutoPOM Assertion Mode error: ${err.message}`);
     }
   }
 

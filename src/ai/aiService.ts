@@ -34,6 +34,7 @@ export class AIService {
       apiKey: config.get<string>('aiApiKey') || '',
       endpoint: config.get<string>('ollamaEndpoint') || 'http://localhost:11434',
       model: config.get<string>('ollamaModel') || 'qwen2.5-coder:latest',
+      geminiModel: config.get<string>('geminiModel') || 'gemini-2.0-flash-lite',
     };
   }
 
@@ -65,7 +66,7 @@ ${prunedJson}
         if (!config.apiKey) {
           throw new Error('Gemini API key is not configured in Settings ("autopom.aiApiKey").');
         }
-        rawResponse = await this.callGemini(config.apiKey, userPrompt);
+        rawResponse = await this.callGemini(config.apiKey, userPrompt, config.geminiModel || 'gemini-2.0-flash-lite');
       } else if (config.provider === 'openai') {
         if (!config.apiKey) {
           throw new Error('OpenAI API key is not configured in Settings ("autopom.aiApiKey").');
@@ -112,8 +113,8 @@ ${prunedJson}
     }
   }
 
-  private async callGemini(apiKey: string, prompt: string): Promise<string> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  private async callGemini(apiKey: string, prompt: string, model: string = 'gemini-2.0-flash-lite'): Promise<string> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -128,6 +129,36 @@ ${prunedJson}
         ],
         generationConfig: {
           response_mime_type: 'application/json',
+          response_schema: {
+            type: 'OBJECT',
+            properties: {
+              pageClassName: { type: 'STRING' },
+              components: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    componentName: { type: 'STRING' },
+                    description: { type: 'STRING' },
+                    elements: {
+                      type: 'ARRAY',
+                      items: {
+                        type: 'OBJECT',
+                        properties: {
+                          id: { type: 'STRING' },
+                          semanticName: { type: 'STRING' },
+                          actionDescription: { type: 'STRING' },
+                        },
+                        required: ['id', 'semanticName'],
+                      },
+                    },
+                  },
+                  required: ['componentName', 'elements'],
+                },
+              },
+            },
+            required: ['pageClassName', 'components'],
+          },
         },
       }),
     });

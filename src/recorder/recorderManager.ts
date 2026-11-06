@@ -30,6 +30,10 @@ export class RecorderManager {
     return [...this.actions];
   }
 
+  public setRecordedActions(actions: RecordedAction[]): void {
+    this.actions = [...actions];
+  }
+
   public setOnActionCallback(cb: OnActionCallback | null): void {
     this.onActionCallback = cb;
   }
@@ -94,11 +98,112 @@ export class RecorderManager {
         };
       }
 
+      function showAssertionPopup(el: HTMLElement, info: any) {
+        const old = document.getElementById('autopom-assert-card');
+        if (old) old.remove();
+
+        const rect = el.getBoundingClientRect();
+        const card = document.createElement('div');
+        card.id = 'autopom-assert-card';
+        card.style.position = 'fixed';
+        card.style.zIndex = '2147483647';
+        card.style.left = `${Math.max(10, Math.min(window.innerWidth - 320, rect.left))}px`;
+        card.style.top = `${Math.max(10, Math.min(window.innerHeight - 250, rect.bottom + 8))}px`;
+        card.style.width = '300px';
+        card.style.background = '#1e1e2e';
+        card.style.color = '#cdd6f4';
+        card.style.borderRadius = '8px';
+        card.style.boxShadow = '0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px #89b4fa';
+        card.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+        card.style.fontSize = '12px';
+        card.style.padding = '12px';
+        card.style.boxSizing = 'border-box';
+
+        const textSample = (info.innerText || '').slice(0, 40);
+
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-weight:bold; color:#89b4fa; display:flex; align-items:center; gap:6px;">
+              <span>🎯 Add Test Assertion</span>
+            </div>
+            <button id="autopom-close-assert" style="background:none; border:none; color:#a6adc8; cursor:pointer; font-size:14px;">✕</button>
+          </div>
+          <div style="margin-bottom:8px; color:#a6adc8; font-size:11px;">
+            Target: &lt;${info.tagName}&gt; ${textSample ? '"' + textSample.replace(/"/g, '&quot;') + '"' : ''}
+          </div>
+          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="radio" name="autopom-assert-type" value="visible" checked />
+              <span>👁️ <b>Assert Visible</b> (is displayed)</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="radio" name="autopom-assert-type" value="text_contains" />
+              <span>📝 <b>Assert Text Contains</b></span>
+            </label>
+            <input id="autopom-assert-text-val" type="text" value="${textSample.replace(/"/g, '&quot;')}" style="margin-left:20px; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:3px 6px; font-size:11px;" />
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="radio" name="autopom-assert-type" value="hidden" />
+              <span>💨 <b>Assert Disappeared / Hidden</b></span>
+            </label>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button id="autopom-cancel-assert" style="background:#313244; color:#cdd6f4; border:none; border-radius:4px; padding:5px 10px; cursor:pointer;">Cancel</button>
+            <button id="autopom-confirm-assert" style="background:#89b4fa; color:#11111b; font-weight:bold; border:none; border-radius:4px; padding:5px 12px; cursor:pointer;">Add Assertion</button>
+          </div>
+        `;
+
+        document.documentElement.appendChild(card);
+
+        const prevOutline = el.style.outline;
+        el.style.outline = '2px solid #cba6f7';
+
+        const cleanup = () => {
+          card.remove();
+          el.style.outline = prevOutline;
+        };
+
+        card.querySelector('#autopom-close-assert')?.addEventListener('click', cleanup);
+        card.querySelector('#autopom-cancel-assert')?.addEventListener('click', cleanup);
+
+        card.querySelector('#autopom-confirm-assert')?.addEventListener('click', () => {
+          const selectedRadio = card.querySelector('input[name="autopom-assert-type"]:checked') as HTMLInputElement;
+          const assertType = selectedRadio ? selectedRadio.value : 'visible';
+          const textVal = (card.querySelector('#autopom-assert-text-val') as HTMLInputElement)?.value || '';
+
+          if ((window as any).__AUTOPOM_ON_USER_ACTION) {
+            (window as any).__AUTOPOM_ON_USER_ACTION({
+              type: 'assert',
+              assertionType: assertType,
+              expectedValue: textVal,
+              elementInfo: info,
+              timestamp: Date.now(),
+            });
+          }
+          cleanup();
+        });
+      }
+
       window.addEventListener(
         'click',
         (e: MouseEvent) => {
           const target = e.target as HTMLElement;
-          if (!target || target.closest('#autopom-overlay-root')) return;
+          if (!target || target.closest('#autopom-overlay-root') || target.closest('#autopom-assert-card')) return;
+
+          // Check if user triggered assertion via Alt+Click or toolbar Assertion Mode
+          const isAssertMode = e.altKey || !!(window as any).__AUTOPOM_ASSERT_MODE;
+          if (isAssertMode) {
+            e.preventDefault();
+            e.stopPropagation();
+            (window as any).__AUTOPOM_ASSERT_MODE = false;
+
+            const targetEl = target.closest(
+              'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="menuitem"], [onclick], h1, h2, h3, h4, p, span, div'
+            ) || target;
+
+            const info = getElementAttributes(targetEl as HTMLElement);
+            showAssertionPopup(targetEl as HTMLElement, info);
+            return;
+          }
 
           // Only record clicks on actual interactive targets - ignore background whitespace/layout containers
           const closestInteractive = target.closest(
@@ -170,9 +275,23 @@ export class RecorderManager {
     return [...this.actions];
   }
 
+  public async toggleAssertionMode(page: Page): Promise<boolean> {
+    try {
+      const mode = await page.evaluate(() => {
+        (window as any).__AUTOPOM_ASSERT_MODE = !((window as any).__AUTOPOM_ASSERT_MODE);
+        return !!((window as any).__AUTOPOM_ASSERT_MODE);
+      });
+      return mode;
+    } catch {
+      return false;
+    }
+  }
+
   private handleUserAction(raw: {
-    type: 'click' | 'input';
+    type: 'click' | 'input' | 'assert';
     value?: string;
+    assertionType?: 'visible' | 'text_contains' | 'state' | 'hidden';
+    expectedValue?: string;
     elementInfo: RawElementInfo;
     timestamp: number;
   }): void {
@@ -186,16 +305,29 @@ export class RecorderManager {
     const hasPendingNetwork =
       this.pendingRequests.size > 0 || Date.now() - this.lastNetworkActivityTime < 500;
 
+    let targetDesc = '';
+    if (raw.type === 'click') {
+      targetDesc = `Click: ${varName}`;
+    } else if (raw.type === 'input') {
+      targetDesc = `Input: ${varName}`;
+    } else {
+      const assertLabel = raw.assertionType || 'visible';
+      const valStr = raw.expectedValue ? ` "${raw.expectedValue}"` : '';
+      targetDesc = `Assert [${assertLabel}]: ${varName}${valStr}`;
+    }
+
     const action: RecordedAction = {
       id: `act_${raw.timestamp}`,
       type: raw.type,
       timestamp: raw.timestamp,
       locator: recommendedLocator,
       value: raw.value,
-      targetElementDescription: `${raw.type === 'click' ? 'Click' : 'Input'}: ${varName}`,
+      targetElementDescription: targetDesc,
       suggestedVariableName: varName,
       category,
-      waitCondition: hasPendingNetwork
+      assertionType: raw.assertionType,
+      expectedValue: raw.expectedValue,
+      waitCondition: hasPendingNetwork && raw.type !== 'assert'
         ? {
             type: 'network_idle',
             description: 'Wait for network requests to finish',
@@ -250,6 +382,18 @@ export class RecorderManager {
         const methodName = LocatorRanker.toMethodName(act.suggestedVariableName, 'enter', 'python');
         const cleanVal = (act.value || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ');
         pomSteps.push(`        page.${methodName}("${cleanVal}")`);
+      } else if (act.type === 'assert' && act.suggestedVariableName) {
+        const varName = LocatorRanker.toSnakeCase(act.suggestedVariableName);
+        if (act.assertionType === 'visible') {
+          pomSteps.push(`        assert page.is_${varName}_visible()`);
+        } else if (act.assertionType === 'text_contains') {
+          const cleanVal = (act.expectedValue || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ');
+          pomSteps.push(`        assert "${cleanVal}" in page.get_${varName}_text()`);
+        } else if (act.assertionType === 'hidden') {
+          pomSteps.push(`        assert page.is_${varName}_hidden()`);
+        } else {
+          pomSteps.push(`        assert page.is_${varName}_visible()`);
+        }
       }
     });
 
@@ -302,12 +446,26 @@ export class RecorderManager {
         const methodName = LocatorRanker.toMethodName(act.suggestedVariableName, 'enter', 'java');
         const cleanVal = (act.value || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ');
         pomSteps.push(`        page.${methodName}("${cleanVal}");`);
+      } else if (act.type === 'assert' && act.suggestedVariableName) {
+        const camel = LocatorRanker.toCamelCase(act.suggestedVariableName);
+        const cap = camel.charAt(0).toUpperCase() + camel.slice(1);
+        if (act.assertionType === 'visible') {
+          pomSteps.push(`        assertTrue(page.is${cap}Visible());`);
+        } else if (act.assertionType === 'text_contains') {
+          const cleanVal = (act.expectedValue || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ');
+          pomSteps.push(`        assertTrue(page.get${cap}Text().contains("${cleanVal}"));`);
+        } else if (act.assertionType === 'hidden') {
+          pomSteps.push(`        assertTrue(page.is${cap}Hidden());`);
+        } else {
+          pomSteps.push(`        assertTrue(page.is${cap}Visible());`);
+        }
       }
     });
 
     return [
       'package tests;',
       '',
+      'import static org.junit.jupiter.api.Assertions.assertTrue;',
       'import org.junit.jupiter.api.AfterEach;',
       'import org.junit.jupiter.api.BeforeEach;',
       'import org.junit.jupiter.api.Test;',
@@ -378,6 +536,33 @@ export class RecorderManager {
           `        element.send_keys("${(act.value || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ')}")`
         );
         steps.push('');
+      } else if (act.type === 'assert' && act.locator) {
+        if (act.assertionType === 'visible') {
+          steps.push(`        # Assert visible: ${act.targetElementDescription || 'Element'}`);
+          steps.push(
+            `        assert_el = wait.until(EC.visibility_of_element_located((${this.getPythonBy(act.locator)})))`
+          );
+          steps.push(`        assert assert_el.is_displayed(), "Expected element to be visible"`);
+        } else if (act.assertionType === 'text_contains') {
+          const cleanExpected = (act.expectedValue || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ');
+          steps.push(`        # Assert text contains "${cleanExpected}": ${act.targetElementDescription || 'Element'}`);
+          steps.push(
+            `        assert_el = wait.until(EC.visibility_of_element_located((${this.getPythonBy(act.locator)})))`
+          );
+          steps.push(`        assert "${cleanExpected}" in assert_el.text, f"Expected '${cleanExpected}' in element text"`);
+        } else if (act.assertionType === 'hidden') {
+          steps.push(`        # Assert hidden: ${act.targetElementDescription || 'Element'}`);
+          steps.push(
+            `        assert wait.until(EC.invisibility_of_element_located((${this.getPythonBy(act.locator)}))), "Expected element to be hidden"`
+          );
+        } else if (act.assertionType === 'state') {
+          steps.push(`        # Assert enabled: ${act.targetElementDescription || 'Element'}`);
+          steps.push(
+            `        assert_el = wait.until(EC.element_to_be_clickable((${this.getPythonBy(act.locator)})))`
+          );
+          steps.push(`        assert assert_el.is_enabled(), "Expected element to be enabled"`);
+        }
+        steps.push('');
       }
     });
 
@@ -440,12 +625,40 @@ export class RecorderManager {
         steps.push(`        inputEl.clear();`);
         steps.push(`        inputEl.sendKeys("${(act.value || '').replace(/"/g, '\\"')}");`);
         steps.push('');
+      } else if (act.type === 'assert' && act.locator) {
+        if (act.assertionType === 'visible') {
+          steps.push(`        // Assert visible: ${act.targetElementDescription || 'Element'}`);
+          steps.push(
+            `        WebElement assertEl = wait.until(ExpectedConditions.visibilityOfElementLocated(${this.getJavaBy(act.locator)}));`
+          );
+          steps.push(`        assertTrue(assertEl.isDisplayed(), "Expected element to be visible");`);
+        } else if (act.assertionType === 'text_contains') {
+          const cleanExpected = (act.expectedValue || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ');
+          steps.push(`        // Assert text contains "${cleanExpected}": ${act.targetElementDescription || 'Element'}`);
+          steps.push(
+            `        WebElement assertEl = wait.until(ExpectedConditions.visibilityOfElementLocated(${this.getJavaBy(act.locator)}));`
+          );
+          steps.push(`        assertTrue(assertEl.getText().contains("${cleanExpected}"), "Expected element text to contain substring");`);
+        } else if (act.assertionType === 'hidden') {
+          steps.push(`        // Assert hidden: ${act.targetElementDescription || 'Element'}`);
+          steps.push(
+            `        assertTrue(wait.until(ExpectedConditions.invisibilityOfElementLocated(${this.getJavaBy(act.locator)})), "Expected element to be hidden");`
+          );
+        } else if (act.assertionType === 'state') {
+          steps.push(`        // Assert enabled: ${act.targetElementDescription || 'Element'}`);
+          steps.push(
+            `        WebElement assertEl = wait.until(ExpectedConditions.elementToBeClickable(${this.getJavaBy(act.locator)}));`
+          );
+          steps.push(`        assertTrue(assertEl.isEnabled(), "Expected element to be enabled");`);
+        }
+        steps.push('');
       }
     });
 
     return [
       'package tests;',
       '',
+      'import static org.junit.jupiter.api.Assertions.assertTrue;',
       'import org.junit.jupiter.api.AfterEach;',
       'import org.junit.jupiter.api.BeforeEach;',
       'import org.junit.jupiter.api.Test;',

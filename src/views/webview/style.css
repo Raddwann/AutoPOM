@@ -309,6 +309,13 @@ body {
 .action-badge.click { background-color: #3b82f6; }
 .action-badge.input { background-color: #8b5cf6; }
 .action-badge.navigation { background-color: #10b981; }
+.action-badge.assert { background-color: #ec4899; }
+
+.btn.active {
+  background-color: #ec4899 !important;
+  color: white !important;
+  box-shadow: 0 0 0 1px #be185d;
+}
 
 .element-details, .action-details {
   display: flex;

@@ -180,3 +180,163 @@ test('DomPruner: sanitizes emails and credit cards from DOM', () => {
   assert.ok(!sanitized.includes('4111-2222-3333-4444'));
   assert.ok(sanitized.includes('[CARD]'));
 });
+
+test('PythonSeleniumGenerator: generates verification methods and supports component grouping', () => {
+  const generator = new PythonSeleniumGenerator();
+  const sampleElements: ScannedElement[] = [
+    {
+      id: 'el_1',
+      tagName: 'button',
+      suggestedVariableName: 'catalogButton',
+      category: 'button',
+      confidence: 'high',
+      selected: true,
+      componentGroup: 'Navigation',
+      locators: [],
+      recommendedLocator: {
+        type: 'xpath',
+        value: "//button[normalize-space()='01 Catalog']",
+        score: 70,
+        isUnique: true,
+      },
+      boundingRect: { x: 0, y: 0, width: 100, height: 30 },
+    },
+    {
+      id: 'el_2',
+      tagName: 'input',
+      suggestedVariableName: 'usernameInput',
+      category: 'input',
+      confidence: 'high',
+      selected: true,
+      componentGroup: 'LoginForm',
+      locators: [],
+      recommendedLocator: {
+        type: 'css',
+        value: 'input[name="username"]',
+        score: 80,
+        isUnique: true,
+      },
+      boundingRect: { x: 0, y: 50, width: 100, height: 30 },
+    },
+  ];
+
+  const code = generator.generatePOM({
+    className: 'LoginPage',
+    language: 'python',
+    url: 'http://localhost:8000/',
+    elements: sampleElements,
+  });
+
+  // Verify component grouping headers
+  assert.ok(code.includes('# --- Component: Navigation ---'), 'Should group Navigation locators');
+  assert.ok(code.includes('# --- Component: LoginForm ---'), 'Should group LoginForm locators');
+  assert.ok(code.includes('# --- Component Actions: Navigation ---'));
+  assert.ok(code.includes('# --- Component Verifications: Navigation ---'));
+
+  // Verify verification helper methods
+  assert.ok(code.includes('def is_catalog_button_visible(self) -> bool:'), 'Must generate visibility check');
+  assert.ok(code.includes('def get_catalog_button_text(self) -> str:'), 'Must generate text getter');
+  assert.ok(code.includes('def is_catalog_button_hidden(self) -> bool:'), 'Must generate hidden check');
+  assert.ok(code.includes('def is_username_input_visible(self) -> bool:'));
+});
+
+test('JavaSeleniumGenerator: generates verification methods and supports component grouping', () => {
+  const generator = new JavaSeleniumGenerator();
+  const sampleElements: ScannedElement[] = [
+    {
+      id: 'el_1',
+      tagName: 'button',
+      suggestedVariableName: 'catalogButton',
+      category: 'button',
+      confidence: 'high',
+      selected: true,
+      componentGroup: 'Navigation',
+      locators: [],
+      recommendedLocator: {
+        type: 'xpath',
+        value: "//button[normalize-space()='01 Catalog']",
+        score: 70,
+        isUnique: true,
+      },
+      boundingRect: { x: 0, y: 0, width: 100, height: 30 },
+    },
+  ];
+
+  const code = generator.generatePOM({
+    className: 'LoginPage',
+    language: 'java',
+    url: 'http://localhost:8000/',
+    elements: sampleElements,
+  });
+
+  // Verify component grouping
+  assert.ok(code.includes('// --- Component: Navigation ---'));
+  assert.ok(code.includes('// --- Component Actions: Navigation ---'));
+  assert.ok(code.includes('// --- Component Verifications: Navigation ---'));
+
+  // Verify verification helper methods
+  assert.ok(code.includes('public boolean isCatalogButtonVisible()'));
+  assert.ok(code.includes('public String getCatalogButtonText()'));
+  assert.ok(code.includes('public boolean isCatalogButtonHidden()'));
+});
+
+test('RecorderManager: generates assertion steps for both Standalone and POM test scripts', () => {
+  const recorder = RecorderManager.getInstance();
+  recorder.setRecordedActions([
+    {
+      id: 'act_1',
+      type: 'navigation',
+      url: 'http://localhost:8000/',
+      timestamp: 1000,
+    },
+    {
+      id: 'act_2',
+      type: 'assert',
+      assertionType: 'visible',
+      suggestedVariableName: 'catalogButton',
+      targetElementDescription: 'Catalog Button',
+      locator: {
+        type: 'xpath',
+        value: "//button[normalize-space()='01 Catalog']",
+        score: 70,
+        isUnique: true,
+      },
+      timestamp: 2000,
+    },
+    {
+      id: 'act_3',
+      type: 'assert',
+      assertionType: 'text_contains',
+      expectedValue: 'Catalog',
+      suggestedVariableName: 'catalogButton',
+      targetElementDescription: 'Catalog Button',
+      locator: {
+        type: 'xpath',
+        value: "//button[normalize-space()='01 Catalog']",
+        score: 70,
+        isUnique: true,
+      },
+      timestamp: 3000,
+    },
+  ]);
+
+  // 1. Python POM
+  const pyPom = recorder.generateTestScript('python', 'CatalogPage', true);
+  assert.ok(pyPom.includes('assert page.is_catalog_button_visible()'), 'Python POM should call is_catalog_button_visible');
+  assert.ok(pyPom.includes('assert "Catalog" in page.get_catalog_button_text()'), 'Python POM should call get_catalog_button_text');
+
+  // 2. Python Standalone
+  const pyStandalone = recorder.generateTestScript('python', 'CatalogPage', false);
+  assert.ok(pyStandalone.includes('assert assert_el.is_displayed()'), 'Python standalone should assert is_displayed');
+  assert.ok(pyStandalone.includes('"Catalog" in assert_el.text'), 'Python standalone should assert text contains');
+
+  // 3. Java POM
+  const javaPom = recorder.generateTestScript('java', 'CatalogPage', true);
+  assert.ok(javaPom.includes('assertTrue(page.isCatalogButtonVisible());'), 'Java POM should call isCatalogButtonVisible');
+  assert.ok(javaPom.includes('assertTrue(page.getCatalogButtonText().contains("Catalog"));'), 'Java POM should verify text contains');
+
+  // 4. Java Standalone
+  const javaStandalone = recorder.generateTestScript('java', 'CatalogPage', false);
+  assert.ok(javaStandalone.includes('assertTrue(assertEl.isDisplayed()'), 'Java standalone should assert isDisplayed');
+  assert.ok(javaStandalone.includes('assertTrue(assertEl.getText().contains("Catalog")'), 'Java standalone should assert getText');
+});

@@ -15,9 +15,6 @@ export class PythonSeleniumGenerator implements CodeGenerator {
     }
     const selectedElements = elements.filter((el) => el.selected);
 
-    const locatorConstants: string[] = [];
-    const actionMethods: string[] = [];
-
     // Map locator signature -> metadata
     const locatorSignatureMap = new Map<
       string,
@@ -54,14 +51,43 @@ export class PythonSeleniumGenerator implements CodeGenerator {
       }
     });
 
-    // Step 2: Generate declarations & methods for unique locators
-    locatorSignatureMap.forEach(({ constName, count, element }, locatorTuple) => {
-      locatorConstants.push(`    ${constName} = ${locatorTuple}`);
+    // Step 2: Generate declarations & methods for unique locators with optional component grouping
+    const hasComponents = selectedElements.some((el) => !!el.componentGroup);
 
-      const method = this.generateActionMethod(element, constName, count > 1);
-      if (method) {
-        actionMethods.push(method);
+    const groups = new Map<
+      string,
+      { constName: string; count: number; element: ScannedElement; locatorTuple: string }[]
+    >();
+
+    locatorSignatureMap.forEach(({ constName, count, element }, locatorTuple) => {
+      const grp = element.componentGroup || (hasComponents ? 'General' : '');
+      if (!groups.has(grp)) {
+        groups.set(grp, []);
       }
+      groups.get(grp)!.push({ constName, count, element, locatorTuple });
+    });
+
+    const locatorConstants: string[] = [];
+    const actionMethods: string[] = [];
+    const verificationMethods: string[] = [];
+
+    groups.forEach((items, grp) => {
+      if (grp) {
+        locatorConstants.push(`    # --- Component: ${grp} ---`);
+        actionMethods.push(`    # --- Component Actions: ${grp} ---`);
+        verificationMethods.push(`    # --- Component Verifications: ${grp} ---`);
+      }
+      items.forEach(({ constName, count, element, locatorTuple }) => {
+        locatorConstants.push(`    ${constName} = ${locatorTuple}`);
+
+        const method = this.generateActionMethod(element, constName, count > 1);
+        if (method) {
+          actionMethods.push(method);
+        }
+
+        const ver = this.generateVerificationMethods(element, constName, count > 1);
+        verificationMethods.push(...ver);
+      });
     });
 
     const lines: string[] = [
@@ -87,6 +113,9 @@ export class PythonSeleniumGenerator implements CodeGenerator {
       '',
       '    # --- Page Actions ---',
       ...(actionMethods.length > 0 ? actionMethods : ['    pass']),
+      '',
+      '    # --- Element Verifications ---',
+      ...(verificationMethods.length > 0 ? verificationMethods : ['    pass']),
       '',
     ];
 
@@ -187,6 +216,59 @@ export class PythonSeleniumGenerator implements CodeGenerator {
       `        return self.wait.until(EC.visibility_of_element_located(self.${constName}))`,
       '',
     ].join('\n');
+  }
+
+  private generateVerificationMethods(
+    el: ScannedElement,
+    constName: string,
+    isRepeated: boolean
+  ): string[] {
+    const snake = LocatorRanker.toSnakeCase(el.suggestedVariableName);
+    if (isRepeated) {
+      return [
+        `    def is_${snake}_visible(self, index: int = 0) -> bool:`,
+        `        """Returns True if ${el.suggestedVariableName} at index is visible, False otherwise."""`,
+        `        try:`,
+        `            elements = self.wait.until(EC.presence_of_all_elements_located(self.${constName}))`,
+        `            return elements[index].is_displayed() if index < len(elements) else False`,
+        `        except Exception:`,
+        `            return False`,
+        '',
+        `    def get_${snake}_text(self, index: int = 0) -> str:`,
+        `        """Returns the text of ${el.suggestedVariableName} at index."""`,
+        `        elements = self.wait.until(EC.presence_of_all_elements_located(self.${constName}))`,
+        `        return elements[index].text if index < len(elements) else ""`,
+        '',
+        `    def is_${snake}_hidden(self) -> bool:`,
+        `        """Returns True if ${el.suggestedVariableName} is hidden or absent, False otherwise."""`,
+        `        try:`,
+        `            return bool(self.wait.until(EC.invisibility_of_element_located(self.${constName})))`,
+        `        except Exception:`,
+        `            return False`,
+        '',
+      ];
+    }
+
+    return [
+      `    def is_${snake}_visible(self) -> bool:`,
+      `        """Returns True if ${el.suggestedVariableName} is visible, False otherwise."""`,
+      `        try:`,
+      `            return self.wait.until(EC.visibility_of_element_located(self.${constName})).is_displayed()`,
+      `        except Exception:`,
+      `            return False`,
+      '',
+      `    def get_${snake}_text(self) -> str:`,
+      `        """Returns the text of ${el.suggestedVariableName}."""`,
+      `        return self.wait.until(EC.visibility_of_element_located(self.${constName})).text`,
+      '',
+      `    def is_${snake}_hidden(self) -> bool:`,
+      `        """Returns True if ${el.suggestedVariableName} is hidden or absent, False otherwise."""`,
+      `        try:`,
+      `            return bool(self.wait.until(EC.invisibility_of_element_located(self.${constName})))`,
+      `        except Exception:`,
+      `            return False`,
+      '',
+    ];
   }
 
   private toUpperSnakeCase(str: string): string {

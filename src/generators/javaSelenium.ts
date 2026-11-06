@@ -15,9 +15,6 @@ export class JavaSeleniumGenerator implements CodeGenerator {
     }
     const selectedElements = elements.filter((el) => el.selected);
 
-    const locatorFields: string[] = [];
-    const actionMethods: string[] = [];
-
     // Map locator signature -> metadata
     const locatorSignatureMap = new Map<
       string,
@@ -52,14 +49,43 @@ export class JavaSeleniumGenerator implements CodeGenerator {
       }
     });
 
-    // Step 2: Generate field declarations and action methods
-    locatorSignatureMap.forEach(({ fieldName, count, element }, locatorBy) => {
-      locatorFields.push(`    private final By ${fieldName} = ${locatorBy};`);
+    // Step 2: Generate field declarations, actions, and verification methods with optional component grouping
+    const hasComponents = selectedElements.some((el) => !!el.componentGroup);
 
-      const method = this.generateActionMethod(element, fieldName, className, count > 1);
-      if (method) {
-        actionMethods.push(method);
+    const groups = new Map<
+      string,
+      { fieldName: string; count: number; element: ScannedElement; locatorBy: string }[]
+    >();
+
+    locatorSignatureMap.forEach(({ fieldName, count, element }, locatorBy) => {
+      const grp = element.componentGroup || (hasComponents ? 'General' : '');
+      if (!groups.has(grp)) {
+        groups.set(grp, []);
       }
+      groups.get(grp)!.push({ fieldName, count, element, locatorBy });
+    });
+
+    const locatorFields: string[] = [];
+    const actionMethods: string[] = [];
+    const verificationMethods: string[] = [];
+
+    groups.forEach((items, grp) => {
+      if (grp) {
+        locatorFields.push(`    // --- Component: ${grp} ---`);
+        actionMethods.push(`    // --- Component Actions: ${grp} ---`);
+        verificationMethods.push(`    // --- Component Verifications: ${grp} ---`);
+      }
+      items.forEach(({ fieldName, count, element, locatorBy }) => {
+        locatorFields.push(`    private final By ${fieldName} = ${locatorBy};`);
+
+        const method = this.generateActionMethod(element, fieldName, className, count > 1);
+        if (method) {
+          actionMethods.push(method);
+        }
+
+        const ver = this.generateVerificationMethods(element, fieldName, count > 1);
+        verificationMethods.push(...ver);
+      });
     });
 
     const lines: string[] = [
@@ -96,6 +122,9 @@ export class JavaSeleniumGenerator implements CodeGenerator {
       '',
       '    // --- Actions ---',
       ...(actionMethods.length > 0 ? actionMethods : ['    // No actions generated']),
+      '',
+      '    // --- Verifications ---',
+      ...(verificationMethods.length > 0 ? verificationMethods : ['    // No verifications generated']),
       '}',
       '',
     ];
@@ -205,6 +234,73 @@ export class JavaSeleniumGenerator implements CodeGenerator {
       '    }',
       '',
     ].join('\n');
+  }
+
+  private generateVerificationMethods(
+    el: ScannedElement,
+    fieldName: string,
+    isRepeated: boolean
+  ): string[] {
+    const camel = this.toCamelCase(el.suggestedVariableName);
+    const cap = camel.charAt(0).toUpperCase() + camel.slice(1);
+
+    if (isRepeated) {
+      return [
+        `    public boolean is${cap}Visible(int index) {`,
+        `        try {`,
+        `            List<WebElement> elements = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(${fieldName}));`,
+        `            return index < elements.size() && elements.get(index).isDisplayed();`,
+        `        } catch (Exception e) {`,
+        `            return false;`,
+        `        }`,
+        `    }`,
+        '',
+        `    public boolean is${cap}Visible() {`,
+        `        return is${cap}Visible(0);`,
+        `    }`,
+        '',
+        `    public String get${cap}Text(int index) {`,
+        `        List<WebElement> elements = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(${fieldName}));`,
+        `        return index < elements.size() ? elements.get(index).getText() : "";`,
+        `    }`,
+        '',
+        `    public String get${cap}Text() {`,
+        `        return get${cap}Text(0);`,
+        `    }`,
+        '',
+        `    public boolean is${cap}Hidden() {`,
+        `        try {`,
+        `            return wait.until(ExpectedConditions.invisibilityOfElementLocated(${fieldName}));`,
+        `        } catch (Exception e) {`,
+        `            return false;`,
+        `        }`,
+        `    }`,
+        '',
+      ];
+    }
+
+    return [
+      `    public boolean is${cap}Visible() {`,
+      `        try {`,
+      `            return wait.until(ExpectedConditions.visibilityOfElementLocated(${fieldName})).isDisplayed();`,
+      `        } catch (Exception e) {`,
+      `            return false;`,
+      `        }`,
+      `    }`,
+      '',
+      `    public String get${cap}Text() {`,
+      `        return wait.until(ExpectedConditions.visibilityOfElementLocated(${fieldName})).getText();`,
+      `    }`,
+      '',
+      `    public boolean is${cap}Hidden() {`,
+      `        try {`,
+      `            return wait.until(ExpectedConditions.invisibilityOfElementLocated(${fieldName}));`,
+      `        } catch (Exception e) {`,
+      `            return false;`,
+      `        }`,
+      `    }`,
+      '',
+    ];
   }
 
   private toCamelCase(str: string): string {

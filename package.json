@@ -103,6 +103,11 @@
           "default": "",
           "description": "API Key for cloud LLM providers (Gemini, OpenAI, Anthropic)."
         },
+        "autopom.geminiModel": {
+          "type": "string",
+          "default": "gemini-2.0-flash-lite",
+          "description": "Gemini model to use (e.g. gemini-2.0-flash-lite, gemini-flash-lite-latest)."
+        },
         "autopom.ollamaEndpoint": {
           "type": "string",
           "default": "http://localhost:11434",
