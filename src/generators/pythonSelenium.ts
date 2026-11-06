@@ -1,5 +1,6 @@
 import { CodeGenerator } from './baseGenerator';
 import { POMGeneratorOptions, ScannedElement, LocatorCandidate } from '../types';
+import { LocatorRanker } from '../scanner/locatorRanker';
 
 export class PythonSeleniumGenerator implements CodeGenerator {
   public getFileExtension(): string {
@@ -108,10 +109,9 @@ export class PythonSeleniumGenerator implements CodeGenerator {
 
   private generateActionMethod(el: ScannedElement, constName: string, isRepeated: boolean): string {
     const varName = el.suggestedVariableName;
-    const snakeName = this.toSnakeCase(varName);
 
     if (el.category === 'button' || el.category === 'link') {
-      const methodName = snakeName.startsWith('click_') ? snakeName : `click_${snakeName}`;
+      const methodName = LocatorRanker.toMethodName(varName, 'click', 'python');
 
       if (isRepeated) {
         // Multi-element row click method with index
@@ -138,7 +138,7 @@ export class PythonSeleniumGenerator implements CodeGenerator {
     }
 
     if (el.category === 'input') {
-      const methodName = snakeName.startsWith('enter_') || snakeName.startsWith('set_') ? snakeName : `enter_${snakeName}`;
+      const methodName = LocatorRanker.toMethodName(varName, 'enter', 'python');
 
       if (isRepeated) {
         return [
@@ -164,7 +164,7 @@ export class PythonSeleniumGenerator implements CodeGenerator {
     }
 
     if (el.category === 'checkbox' || el.category === 'radio') {
-      const methodName = `toggle_${snakeName}`;
+      const methodName = LocatorRanker.toMethodName(varName, 'toggle', 'python');
       return [
         `    def ${methodName}(self):`,
         `        """Toggles the ${el.suggestedVariableName} option."""`,
@@ -175,8 +175,9 @@ export class PythonSeleniumGenerator implements CodeGenerator {
       ].join('\n');
     }
 
+    const getterName = LocatorRanker.toMethodName(varName, 'get', 'python');
     return [
-      `    def get_${snakeName}(self):`,
+      `    def ${getterName}(self):`,
       `        return self.wait.until(EC.visibility_of_element_located(self.${constName}))`,
       '',
     ].join('\n');
@@ -196,21 +197,6 @@ export class PythonSeleniumGenerator implements CodeGenerator {
     }
 
     return res || 'ELEMENT';
-  }
-
-  private toSnakeCase(str: string): string {
-    let res = str
-      .replace(/([A-Z])/g, '_$1')
-      .replace(/[^a-zA-Z0-9_]/g, '_')
-      .replace(/_{2,}/g, '_')
-      .replace(/^_/, '')
-      .toLowerCase();
-
-    if (/^[0-9]/.test(res)) {
-      res = `item_${res}`;
-    }
-
-    return res || 'element';
   }
 
   private escape(str: string): string {

@@ -62,13 +62,23 @@ test('LocatorRanker: normalizes newlines in button text for XPath', () => {
   assert.strictEqual(xpathLocator.value, "//button[normalize-space()='01 Catalog']");
 });
 
+test('LocatorRanker: toMethodName produces unified, matching method names for POM and Recorder', () => {
+  // Python method names
+  assert.strictEqual(LocatorRanker.toMethodName('btn_01CatalogButton', 'click', 'python'), 'click_btn01catalog_button');
+  assert.strictEqual(LocatorRanker.toMethodName('filterSourcesInput', 'enter', 'python'), 'enter_filter_sources_input');
+
+  // Java method names
+  assert.strictEqual(LocatorRanker.toMethodName('btn_01CatalogButton', 'click', 'java'), 'clickBtn01catalogButton');
+  assert.strictEqual(LocatorRanker.toMethodName('filterSourcesInput', 'enter', 'java'), 'enterFilterSourcesInput');
+});
+
 test('PythonSeleniumGenerator: handles starting digits and deduplicates repeated buttons', () => {
   const generator = new PythonSeleniumGenerator();
   const sampleElements: ScannedElement[] = [
     {
       id: 'el_1',
       tagName: 'button',
-      suggestedVariableName: '01CatalogButton',
+      suggestedVariableName: 'btn_01CatalogButton',
       category: 'button',
       confidence: 'high',
       selected: true,

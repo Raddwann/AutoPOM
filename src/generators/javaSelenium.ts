@@ -1,5 +1,6 @@
 import { CodeGenerator } from './baseGenerator';
 import { POMGeneratorOptions, ScannedElement, LocatorCandidate } from '../types';
+import { LocatorRanker } from '../scanner/locatorRanker';
 
 export class JavaSeleniumGenerator implements CodeGenerator {
   public getFileExtension(): string {
@@ -121,10 +122,10 @@ export class JavaSeleniumGenerator implements CodeGenerator {
     className: string,
     isRepeated: boolean
   ): string {
-    const capitalized = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
+    const varName = el.suggestedVariableName;
 
     if (el.category === 'button' || el.category === 'link') {
-      const methodName = capitalized.startsWith('Click') ? fieldName : `click${capitalized}`;
+      const methodName = LocatorRanker.toMethodName(varName, 'click', 'java');
 
       if (isRepeated) {
         return [
@@ -152,10 +153,7 @@ export class JavaSeleniumGenerator implements CodeGenerator {
     }
 
     if (el.category === 'input') {
-      const methodName =
-        capitalized.startsWith('Enter') || capitalized.startsWith('Set')
-          ? fieldName
-          : `enter${capitalized}`;
+      const methodName = LocatorRanker.toMethodName(varName, 'enter', 'java');
 
       if (isRepeated) {
         return [
@@ -182,7 +180,7 @@ export class JavaSeleniumGenerator implements CodeGenerator {
     }
 
     if (el.category === 'checkbox' || el.category === 'radio') {
-      const methodName = `toggle${capitalized}`;
+      const methodName = LocatorRanker.toMethodName(varName, 'toggle', 'java');
       return [
         `    public ${className} ${methodName}() {`,
         `        WebElement element = wait.until(ExpectedConditions.elementToBeClickable(${fieldName}));`,
@@ -193,8 +191,9 @@ export class JavaSeleniumGenerator implements CodeGenerator {
       ].join('\n');
     }
 
+    const getterName = LocatorRanker.toMethodName(varName, 'get', 'java');
     return [
-      `    public WebElement get${capitalized}() {`,
+      `    public WebElement ${getterName}() {`,
       `        return wait.until(ExpectedConditions.visibilityOfElementLocated(${fieldName}));`,
       '    }',
       '',

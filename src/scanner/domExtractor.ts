@@ -61,7 +61,22 @@ export class DomExtractor {
         );
       }
 
-      elements.forEach((el, index) => {
+      // Check active tab or section heading for SPA smart naming
+      let activeSection = '';
+      const activeTabEl = document.querySelector(
+        '[role="tab"][aria-selected="true"], .nav-segmented button.active, .tab.active, nav button.active, .btn-active'
+      );
+      if (activeTabEl && activeTabEl.textContent?.trim()) {
+        activeSection = activeTabEl.textContent.trim();
+      } else {
+        const mainHeading = document.querySelector('main h1, main h2, .app-main h1, .app-main h2, h1, h2');
+        if (mainHeading && mainHeading.textContent?.trim() && mainHeading.textContent.trim().length < 40) {
+          activeSection = mainHeading.textContent.trim();
+        }
+      }
+
+      let scanIdx = 0;
+      elements.forEach((el) => {
         if (!isVisible(el)) return;
 
         // Skip blank hash/javascript links with no text
@@ -77,15 +92,20 @@ export class DomExtractor {
         const id = el.id ? el.id.trim() : '';
         const isIdUnique = id ? idCounts.get(id) === 1 : false;
 
+        // Tag element with tracking attribute for dynamic sticky overlay
+        const trackingId = `autopom-el-${scanIdx}`;
+        el.setAttribute('data-autopom-id', trackingId);
+
         results.push({
-          index,
+          index: scanIdx,
+          trackingId,
           tagName: el.tagName.toLowerCase(),
           id,
           isIdUnique,
           name: el.getAttribute('name') || '',
           type: el.getAttribute('type') || '',
           className: typeof el.className === 'string' ? el.className.trim() : '',
-          innerText: (el.textContent || '').trim().slice(0, 100),
+          innerText: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100),
           placeholder: el.getAttribute('placeholder') || '',
           ariaLabel: el.getAttribute('aria-label') || '',
           role: el.getAttribute('role') || '',
@@ -98,11 +118,14 @@ export class DomExtractor {
             height: Math.round(rect.height),
           },
         });
+
+        scanIdx++;
       });
 
       return {
         url: window.location.href,
         title: document.title || window.location.href,
+        activeSection,
         elements: results,
       };
     });
@@ -111,7 +134,12 @@ export class DomExtractor {
       throw new Error('Failed to extract elements from active page.');
     }
 
-    const { url, title, elements: rawElements } = rawResult;
+    const { url, title, activeSection, elements: rawElements } = rawResult as {
+      url: string;
+      title: string;
+      activeSection?: string;
+      elements: any[];
+    };
 
     // 2. Process and rank each element using LocatorRanker
     const scannedElements: ScannedElement[] = rawElements.map((raw, idx) => {
@@ -136,7 +164,7 @@ export class DomExtractor {
       const confidence = LocatorRanker.getConfidenceLevel(recommendedLocator.score);
 
       return {
-        id: `el_${idx + 1}`,
+        id: raw.trackingId || `el_${idx + 1}`,
         tagName: raw.tagName,
         inputType: raw.type,
         name: raw.name,
@@ -153,7 +181,7 @@ export class DomExtractor {
       };
     });
 
-    // 3. Inject visual overlay directly into page
+    // 3. Inject visual overlay directly into page with sticky element-tracking
     try {
       await page.evaluate((elementsData: any[]) => {
         const CONTAINER_ID = 'autopom-overlay-root';
@@ -174,15 +202,7 @@ export class DomExtractor {
         root.style.overflow = 'hidden';
         document.documentElement.appendChild(root);
 
-        const badgeElements: { badge: HTMLElement; outline: HTMLElement; targetEl?: Element }[] = [];
-
-        // Collect matching DOM elements
-        const INTERACTIVE_SELECTORS = [
-          'button', 'input', 'select', 'textarea', 'a[href]',
-          '[role="button"]', '[role="link"]', '[role="checkbox"]',
-          '[role="radio"]', '[role="tab"]', '[role="menuitem"]', '[onclick]'
-        ].join(',');
-        const liveDomElements = Array.from(document.querySelectorAll(INTERACTIVE_SELECTORS));
+        const badgeElements: { badge: HTMLElement; outline: HTMLElement; trackingId: string }[] = [];
 
         elementsData.forEach((item, idx) => {
           const rect = item.boundingRect;
@@ -208,6 +228,7 @@ export class DomExtractor {
           badge.style.pointerEvents = 'auto';
           badge.style.cursor = 'pointer';
           badge.style.zIndex = '2147483647';
+          badge.style.transition = 'opacity 0.15s ease';
           badge.title =
             (item.suggestedVariableName || '') +
             ' (' +
@@ -230,6 +251,7 @@ export class DomExtractor {
             ? 'rgba(245, 158, 11, 0.08)'
             : 'rgba(239, 68, 68, 0.08)';
           outline.style.pointerEvents = 'none';
+          outline.style.transition = 'opacity 0.15s ease';
 
           root.appendChild(badge);
           root.appendChild(outline);
@@ -237,21 +259,28 @@ export class DomExtractor {
           badgeElements.push({
             badge,
             outline,
-            targetEl: liveDomElements[idx],
+            trackingId: item.id,
           });
         });
 
-        // Dynamic update on scroll
+        // Dynamic update on scroll - looks up elements dynamically by tracking ID
         const updatePositions = () => {
-          badgeElements.forEach(({ badge, outline, targetEl }) => {
-            if (!targetEl || !targetEl.getBoundingClientRect) return;
+          badgeElements.forEach(({ badge, outline, trackingId }) => {
+            const targetEl = document.querySelector(`[data-autopom-id="${trackingId}"]`);
+            if (!targetEl || !targetEl.getBoundingClientRect) {
+              badge.style.opacity = '0';
+              outline.style.opacity = '0';
+              return;
+            }
+
             const r = targetEl.getBoundingClientRect();
+            // If scrolled out of viewport, hide via opacity (never permanently hide with display:none)
             if (r.width === 0 || r.height === 0 || r.bottom < 0 || r.top > window.innerHeight) {
-              badge.style.display = 'none';
-              outline.style.display = 'none';
+              badge.style.opacity = '0';
+              outline.style.opacity = '0';
             } else {
-              badge.style.display = 'block';
-              outline.style.display = 'block';
+              badge.style.opacity = '1';
+              outline.style.opacity = '1';
               badge.style.left = Math.max(0, r.left) + 'px';
               badge.style.top = Math.max(0, r.top - 18) + 'px';
               outline.style.left = r.left + 'px';
@@ -271,14 +300,14 @@ export class DomExtractor {
 
     return {
       url,
-      title,
+      title: activeSection || title,
       timestamp: Date.now(),
       elements: scannedElements,
     };
   }
 
   /**
-   * Clears visual overlay from the page.
+   * Clears visual overlay and removes tracking attributes from the page.
    */
   public static async clearOverlay(page: Page): Promise<void> {
     try {
@@ -287,6 +316,9 @@ export class DomExtractor {
         if (root) {
           root.remove();
         }
+        document.querySelectorAll('[data-autopom-id]').forEach((el) => {
+          el.removeAttribute('data-autopom-id');
+        });
       });
     } catch (err) {
       console.warn('[AutoPOM] Could not clear overlay:', err);

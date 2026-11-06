@@ -99,7 +99,14 @@ export class RecorderManager {
           const target = e.target as HTMLElement;
           if (!target || target.closest('#autopom-overlay-root')) return;
 
-          const closestInteractive = target.closest('button, a, input, select, [role="button"]') || target;
+          // Only record clicks on actual interactive targets - ignore background whitespace/layout containers
+          const closestInteractive = target.closest(
+            'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="menuitem"], [onclick]'
+          );
+          if (!closestInteractive) {
+            return;
+          }
+
           const info = getElementAttributes(closestInteractive as HTMLElement);
 
           if ((window as any).__AUTOPOM_ON_USER_ACTION) {
@@ -232,15 +239,10 @@ export class RecorderManager {
 
     this.actions.forEach((act) => {
       if (act.type === 'click' && act.suggestedVariableName) {
-        const snakeMethod = this.toSnakeCase(act.suggestedVariableName);
-        const methodName = snakeMethod.startsWith('click_') ? snakeMethod : `click_${snakeMethod}`;
+        const methodName = LocatorRanker.toMethodName(act.suggestedVariableName, 'click', 'python');
         pomSteps.push(`        page.${methodName}()`);
       } else if (act.type === 'input' && act.suggestedVariableName) {
-        const snakeMethod = this.toSnakeCase(act.suggestedVariableName);
-        const methodName =
-          snakeMethod.startsWith('enter_') || snakeMethod.startsWith('set_')
-            ? snakeMethod
-            : `enter_${snakeMethod}`;
+        const methodName = LocatorRanker.toMethodName(act.suggestedVariableName, 'enter', 'python');
         const cleanVal = (act.value || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ');
         pomSteps.push(`        page.${methodName}("${cleanVal}")`);
       }
@@ -285,15 +287,10 @@ export class RecorderManager {
 
     this.actions.forEach((act) => {
       if (act.type === 'click' && act.suggestedVariableName) {
-        const camel = this.toCamelCase(act.suggestedVariableName);
-        const cap = camel.charAt(0).toUpperCase() + camel.slice(1);
-        const methodName = cap.startsWith('Click') ? camel : `click${cap}`;
+        const methodName = LocatorRanker.toMethodName(act.suggestedVariableName, 'click', 'java');
         pomSteps.push(`        page.${methodName}();`);
       } else if (act.type === 'input' && act.suggestedVariableName) {
-        const camel = this.toCamelCase(act.suggestedVariableName);
-        const cap = camel.charAt(0).toUpperCase() + camel.slice(1);
-        const methodName =
-          cap.startsWith('Enter') || cap.startsWith('Set') ? camel : `enter${cap}`;
+        const methodName = LocatorRanker.toMethodName(act.suggestedVariableName, 'enter', 'java');
         const cleanVal = (act.value || '').replace(/"/g, '\\"').replace(/\r?\n|\r/g, ' ');
         pomSteps.push(`        page.${methodName}("${cleanVal}");`);
       }
@@ -484,27 +481,6 @@ export class RecorderManager {
     }
 
     return res || 'scenario';
-  }
-
-  private toCamelCase(str: string): string {
-    let res = str
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
-      .replace(/[^a-zA-Z0-9]/g, ' ')
-      .trim()
-      .split(/\s+/)
-      .map((word, idx) => {
-        if (word.length === 0) return '';
-        const lower = word.toLowerCase();
-        if (idx === 0) return lower;
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
-      })
-      .join('') || 'element';
-
-    if (/^[0-9]/.test(res)) {
-      res = `btn_${res}`;
-    }
-
-    return res;
   }
 
   private getPythonBy(locator: LocatorCandidate): string {

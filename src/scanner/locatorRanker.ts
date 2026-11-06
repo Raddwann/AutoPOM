@@ -236,7 +236,7 @@ export class LocatorRanker {
     return false;
   }
 
-  private static toCamelCase(str: string): string {
+  public static toCamelCase(str: string): string {
     let res = str
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       .replace(/[^a-zA-Z0-9]/g, ' ')
@@ -254,6 +254,56 @@ export class LocatorRanker {
       res = `btn_${res}`;
     }
     return res;
+  }
+
+  public static toSnakeCase(str: string): string {
+    let res = str
+      .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+      .replace(/([A-Z])([A-Z][a-z])/g, '$1_$2')
+      .replace(/[^a-zA-Z0-9_]/g, '_')
+      .replace(/_{2,}/g, '_')
+      .replace(/^_/, '')
+      .toLowerCase();
+
+    if (/^[0-9]/.test(res)) {
+      res = `btn_${res}`;
+    }
+    return res || 'element';
+  }
+
+  public static toMethodName(
+    varName: string,
+    action: 'click' | 'enter' | 'toggle' | 'get',
+    language: 'python' | 'java'
+  ): string {
+    const camel = this.toCamelCase(varName);
+
+    if (language === 'python') {
+      const snake = this.toSnakeCase(camel);
+      if (action === 'click') {
+        return snake.startsWith('click_') ? snake : `click_${snake}`;
+      }
+      if (action === 'enter') {
+        return snake.startsWith('enter_') || snake.startsWith('set_') ? snake : `enter_${snake}`;
+      }
+      if (action === 'toggle') {
+        return `toggle_${snake}`;
+      }
+      return `get_${snake}`;
+    }
+
+    // Java
+    const cap = camel.charAt(0).toUpperCase() + camel.slice(1);
+    if (action === 'click') {
+      return cap.startsWith('Click') ? camel : `click${cap}`;
+    }
+    if (action === 'enter') {
+      return cap.startsWith('Enter') || cap.startsWith('Set') ? camel : `enter${cap}`;
+    }
+    if (action === 'toggle') {
+      return `toggle${cap}`;
+    }
+    return `get${cap}`;
   }
 
   private static escapeSelector(str: string): string {
