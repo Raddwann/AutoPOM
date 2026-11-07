@@ -31,7 +31,7 @@ export class AIService {
     const config = vscode.workspace.getConfiguration('autopom');
     return {
       provider: config.get<'gemini' | 'openai' | 'anthropic' | 'ollama'>('aiProvider') || 'gemini',
-      apiKey: config.get<string>('aiApiKey') || '',
+      apiKey: config.get<string>('aiApiKey') || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '',
       endpoint: config.get<string>('ollamaEndpoint') || 'http://localhost:11434',
       model: config.get<string>('ollamaModel') || 'qwen2.5-coder:latest',
       geminiModel: config.get<string>('geminiModel') || 'gemini-2.0-flash-lite',
